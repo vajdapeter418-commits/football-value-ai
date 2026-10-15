@@ -14,7 +14,7 @@ st.set_page_config(
 
 @st.cache_data(ttl=86400)
 def adatok_betoltese():
-    url = "https://www.football-data.co.uk/mmz4281/2526/E0.csv"
+        url = "https://www.football-data.co.uk/mmz4281/2627/E0.csv"
     keres = Request(url, headers={"User-Agent": "FootballValueAI/1.0"})
     with urlopen(keres, timeout=30) as valasz:
         szoveg = valasz.read().decode("utf-8-sig")
@@ -82,8 +82,9 @@ st.title("⚽ Football Value AI")
 st.caption("Premier League • Statisztikai esélybecslés")
 
 st.info(
-    "A 2025/26-os idény eredményeiből számolunk. "
-    "Ez nem élő adat és nem AI-előrejelzés."
+    "A 2026/27-es idény eddig lejátszott mérkőzéseiből számolunk. "
+    "Az adatforrást naponta újra lekérjük; ez nem élő közvetítés."
+)
 )
 
 try:
@@ -102,8 +103,10 @@ csapatok = sorted(
 st.caption(f"{len(meccsek)} mérkőzés • {len(csapatok)} csapat")
 
 st.warning(
-    "A modell az új idény formáját, sérüléseit és átigazolásait "
-    "nem kezeli. Csak a 2025/26-os csapatok választhatók."
+    "Az idény elején kevés adatból számolunk, ezért a becslés "
+    "bizonytalanabb. A sérüléseket, átigazolásokat és várható "
+    "kezdőcsapatokat a modell nem kezeli."
+)
 )
 
 with st.form("elemzes"):
