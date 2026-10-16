@@ -313,6 +313,23 @@ def main():
                         meccsek, hazai, vendeg
                     )
 
+                    if nh < 10 or nv < 10:
+                        st.warning(
+                            "⚠️ Kevés adat — bizonytalan becslés. "
+                            f"A hazai csapathoz {nh} hazai, "
+                            f"a vendéghez {nv} idegenbeli "
+                            "meccs tartozik. Legalább az egyik "
+                            "minta tíznél kisebb. A pozitív "
+                            "várható hozam önmagában nem "
+                            "igazolt fogadási előny."
+                        )
+
+                    st.caption(
+                        "A tízmeccses határ óvatossági szabály. "
+                        "Elérése nem bizonyítja a modell "
+                        "megbízhatóságát."
+                    )
+
                     st.caption(
                         "A forma az idény legutóbbi elérhető "
                         "meccseit mutatja. Tájékoztató adat, "
