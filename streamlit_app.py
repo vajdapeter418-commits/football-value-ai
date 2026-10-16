@@ -15,7 +15,7 @@ st.set_page_config(
 @st.cache_data(ttl=86400)
 def adatok_betoltese():
         url = "https://www.football-data.co.uk/mmz4281/2627/E0.csv"
-    keres = Request(url, headers={"User-Agent": "FootballValueAI/1.0"})
+        keres = Request(url, headers={"User-Agent": "FootballValueAI/1.0"})
     with urlopen(keres, timeout=30) as valasz:
         szoveg = valasz.read().decode("utf-8-sig")
 
