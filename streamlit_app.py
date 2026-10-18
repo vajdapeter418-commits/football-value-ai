@@ -16,24 +16,46 @@ def feldolgozas(raw):
 
     meccsek = []
 
-    for sor in olvaso:
-        if sor["Div"] != "E0" or not sor["FTHG"] or not sor["FTAG"]:
+    for s in olvaso:
+        if s["Div"] != "E0" or not s["FTHG"] or not s["FTAG"]:
             continue
 
-        datum = datetime.strptime(sor["Date"], "%d/%m/%Y").date()
-        h, v = int(sor["FTHG"]), int(sor["FTAG"])
+        h, v = int(s["FTHG"]), int(s["FTAG"])
 
         if min(h, v) < 0:
             raise ValueError("Érvénytelen gólszám.")
 
+        datum = datetime.strptime(s["Date"], "%d/%m/%Y").date()
+
         meccsek.append(
-            (sor["HomeTeam"], sor["AwayTeam"], h, v, datum)
+            (s["HomeTeam"], s["AwayTeam"], h, v, datum)
         )
 
     if len(meccsek) < 20:
         raise ValueError("Legalább 20 befejezett mérkőzés szükséges.")
 
     return meccsek
+
+
+def goltabla(gh, gv):
+    if not all(
+        math.isfinite(x) and 0 < x <= 20
+        for x in (gh, gv)
+    ):
+        raise ValueError("A gólátlag kívül esik a modell tartományán.")
+
+    ph = [math.exp(-gh)]
+    pv = [math.exp(-gv)]
+
+    for k in range(1, 101):
+        ph.append(ph[-1] * gh / k)
+        pv.append(pv[-1] * gv / k)
+
+    return [
+        (h, v, p * q)
+        for h, p in enumerate(ph)
+        for v, q in enumerate(pv)
+    ]
 
 
 def becsles(meccsek, hazai, vendeg):
@@ -51,31 +73,17 @@ def becsles(meccsek, hazai, vendeg):
     vf = (sum(m[3] for m in v) + 5 * lv) / (len(v) + 5)
     vc = (sum(m[2] for m in v) + 5 * lh) / (len(v) + 5)
 
-    gh, gv = hf * vc / lh, vf * hc / lv
+    gh = hf * vc / lh
+    gv = vf * hc / lv
 
-    if not all(
-        math.isfinite(x) and 0 < x <= 20
-        for x in (gh, gv)
-    ):
-        raise ValueError("A gólátlag kívül esik a modell tartományán.")
+    p = [0.0, 0.0, 0.0]
 
-    ph, pv = [math.exp(-gh)], [math.exp(-gv)]
-
-    for k in range(1, 101):
-        ph.append(ph[-1] * gh / k)
-        pv.append(pv[-1] * gv / k)
-
-    eselyek = [0.0, 0.0, 0.0]
-
-    for i, p in enumerate(ph):
-        for j, q in enumerate(pv):
-            index = 0 if i > j else 1 if i == j else 2
-            eselyek[index] += p * q
-
-    osszeg = sum(eselyek)
+    for a, b, esely in goltabla(gh, gv):
+        index = 0 if a > b else 1 if a == b else 2
+        p[index] += esely
 
     return (
-        [p / osszeg for p in eselyek],
+        [x / sum(p) for x in p],
         gh,
         gv,
         len(h),
@@ -83,12 +91,20 @@ def becsles(meccsek, hazai, vendeg):
     )
 
 
-def visszateszt(meccsek):
-    eredmenyek = []
-    kihagyott = 0
-    napok = sorted({m[4] for m in meccsek})
+def pontos_eredmenyek(gh, gv):
+    tabla = sorted(
+        goltabla(gh, gv),
+        key=lambda r: (-r[2], r[0], r[1]),
+    )
 
-    for nap in napok:
+    return tabla[:5]
+
+
+def visszateszt(meccsek):
+    sorok = []
+    kihagyott = 0
+
+    for nap in sorted({m[4] for m in meccsek}):
         mult = [m for m in meccsek if m[4] < nap]
         mai = [m for m in meccsek if m[4] == nap]
 
@@ -102,7 +118,7 @@ def visszateszt(meccsek):
             index = 0 if m[2] > m[3] else 1 if m[2] == m[3] else 2
             alap[index] += 1
 
-        alap = [p / (len(mult) + 3) for p in alap]
+        alap = [x / (len(mult) + 3) for x in alap]
 
         for m in mai:
             hazai_db = sum(x[0] == m[0] for x in mult)
@@ -118,88 +134,67 @@ def visszateszt(meccsek):
                 kihagyott += 1
                 continue
 
-            tenyleges = (
+            y = (
                 0 if m[2] > m[3]
                 else 1 if m[2] == m[3]
                 else 2
             )
 
-            cel = [int(i == tenyleges) for i in range(3)]
+            cel = [int(i == y) for i in range(3)]
 
-            modell = sum(
-                (a - b) ** 2 for a, b in zip(p, cel)
-            )
-            referencia = sum(
-                (a - b) ** 2 for a, b in zip(alap, cel)
-            )
+            sorok.append((
+                sum((a - b) ** 2 for a, b in zip(p, cel)),
+                sum((a - b) ** 2 for a, b in zip(alap, cel)),
+            ))
 
-            eredmenyek.append((nap, modell, referencia))
-
-    return eredmenyek, kihagyott
+    return sorok, kihagyott
 
 
-def forma_adatok(meccsek, csapat):
+def forma_mutatasa(meccsek, csapat):
     utolso = sorted(
-        [m for m in meccsek if csapat in (m[0], m[1])],
+        [m for m in meccsek if csapat in m[:2]],
         key=lambda m: m[4],
         reverse=True,
     )[:5]
 
     sorok = []
 
-    for hazai, vendeg, hgol, vgol, datum in utolso:
-        otthon = hazai == csapat
-        lott, kapott = (
-            (hgol, vgol) if otthon else (vgol, hgol)
-        )
-
-        eredmeny = (
-            "GY" if lott > kapott
-            else "D" if lott == kapott
-            else "V"
-        )
+    for h, v, hg, vg, datum in utolso:
+        otthon = h == csapat
+        lott, kapott = (hg, vg) if otthon else (vg, hg)
 
         sorok.append({
             "Dátum": datum.strftime("%Y.%m.%d."),
-            "Ellenfél": vendeg if otthon else hazai,
+            "Ellenfél": v if otthon else h,
             "Helyszín": "Hazai" if otthon else "Idegenben",
             "Lőtt": lott,
             "Kapott": kapott,
-            "Eredmény": eredmeny,
+            "Eredmény": (
+                "GY" if lott > kapott
+                else "D" if lott == kapott
+                else "V"
+            ),
         })
 
-    return sorok
+    st.subheader(f"{csapat} – legutóbbi {len(sorok)} meccs")
 
-
-def forma_mutatasa(meccsek, csapat):
-    sorok = forma_adatok(meccsek, csapat)
-
-    st.subheader(
-        f"{csapat} – legutóbbi {len(sorok)} meccs"
-    )
-
-    if not sorok:
-        st.info("Nincs mérkőzésadat.")
-        return
-
-    jelek = [s["Eredmény"] for s in sorok]
+    jelek = [r["Eredmény"] for r in sorok]
 
     st.write(" → ".join(jelek))
-
     st.caption(
-        "Balról a legfrissebb: "
+        "Balról a legfrissebb. "
         "GY = győzelem, D = döntetlen, V = vereség."
     )
 
     st.write(
-        f"Győzelem: **{jelek.count('GY')}** · "
-        f"Döntetlen: **{jelek.count('D')}** · "
-        f"Vereség: **{jelek.count('V')}**"
+        f"Győzelem: {jelek.count('GY')} · "
+        f"Döntetlen: {jelek.count('D')} · "
+        f"Vereség: {jelek.count('V')}"
     )
 
     st.write(
-        f"Gólok: **{sum(s['Lőtt'] for s in sorok)} lőtt / "
-        f"{sum(s['Kapott'] for s in sorok)} kapott**"
+        f"Gólok: {sum(r['Lőtt'] for r in sorok)} lőtt / "
+        f"{sum(r['Kapott'] for r in sorok)} kapott"
     )
 
     st.dataframe(
@@ -240,11 +235,12 @@ def main():
 
     except Exception as hiba:
         st.error(
-            "Az adatbetöltés sikertelen. "
-            "Próbáld a másik idényt."
+            "Az adatbetöltés sikertelen. Próbáld a másik idényt."
         )
+
         with st.expander("Hiba részletei"):
             st.text(str(hiba))
+
         st.stop()
 
     csapatok = sorted(
@@ -265,8 +261,8 @@ def main():
     with elemzes:
         st.info(
             "Statisztikai becslés, nem élő adat. "
-            "Az egész kiválasztott idény elérhető "
-            "eredményeit használja."
+            "A kiválasztott idény összes elérhető "
+            "eredményét használjuk."
         )
 
         with st.form("elemzes"):
@@ -276,7 +272,8 @@ def main():
             )
 
             st.caption(
-                "Az aktuális fogadóirodai oddsokat add meg."
+                "Az aktuális, rendes játékidős "
+                "1X2 oddsokat add meg."
             )
 
             oh = st.number_input(
@@ -313,93 +310,123 @@ def main():
                         meccsek, hazai, vendeg
                     )
 
-                    if nh < 10 or nv < 10:
-                        st.warning(
-                            "⚠️ Kevés adat — bizonytalan becslés. "
-                            f"A hazai csapathoz {nh} hazai, "
-                            f"a vendéghez {nv} idegenbeli "
-                            "meccs tartozik. Legalább az egyik "
-                            "minta tíznél kisebb. A pozitív "
-                            "várható hozam önmagában nem "
-                            "igazolt fogadási előny."
-                        )
-
-                    st.caption(
-                        "A tízmeccses határ óvatossági szabály. "
-                        "Elérése nem bizonyítja a modell "
-                        "megbízhatóságát."
-                    )
-
-                    st.caption(
-                        "A forma az idény legutóbbi elérhető "
-                        "meccseit mutatja. Tájékoztató adat, "
-                        "nem módosítja a becslést."
-                    )
-
-                    forma_mutatasa(meccsek, hazai)
-                    forma_mutatasa(meccsek, vendeg)
-
-                    st.subheader("Modellbecslés")
-
-                    st.write(
-                        f"Becsült gólátlag: **{gh:.2f} – {gv:.2f}**"
-                    )
-
-                    st.caption(
-                        f"{nh} hazai és {nv} idegenbeli meccs alapján."
-                    )
-
-                    nevek = [
-                        "Hazai győzelem",
-                        "Döntetlen",
-                        "Vendéggyőzelem",
-                    ]
-
-                    for nev, esely, odds in zip(
-                        nevek, p, [oh, od, ov]
-                    ):
-                        with st.container(border=True):
-                            st.subheader(nev)
-
-                            st.metric(
-                                "Becsült esély",
-                                f"{esely * 100:.1f}%",
-                            )
-
-                            st.write(
-                                f"Fair odds: **{1 / esely:.2f}**"
-                            )
-
-                            st.metric(
-                                "Becsült várható hozam",
-                                f"{(esely * odds - 1) * 100:+.1f}%",
-                            )
-
                 except ValueError as hiba:
                     st.error(str(hiba))
+                    st.stop()
+
+                if nh < 10 or nv < 10:
+                    st.warning(
+                        "⚠️ Kevés adat — bizonytalan becslés. "
+                        f"{nh} hazai és {nv} idegenbeli "
+                        "meccs alapján számolunk. "
+                        "A pozitív hozam nem igazolt "
+                        "fogadási előny."
+                    )
+
+                st.caption(
+                    "A tízmeccses határ óvatossági szabály; "
+                    "elérése nem bizonyít megbízhatóságot."
+                )
+
+                st.subheader(f"{hazai} – {vendeg}")
+
+                st.write(
+                    f"Becsült gólátlag: **{gh:.2f} – {gv:.2f}**"
+                )
+
+                st.caption(
+                    f"{nh} hazai és {nv} idegenbeli meccs alapján."
+                )
+
+                st.subheader("Legvalószínűbb pontos eredmények")
+
+                top = pontos_eredmenyek(gh, gv)
+
+                st.caption(
+                    "Az eredmények sorrendje: hazai–vendég. "
+                    "Rendes játékidő, hosszabbítás nélkül."
+                )
+
+                st.dataframe(
+                    [
+                        {
+                            "Eredmény": f"{h}–{v}",
+                            "Esély (%)": round(q * 100, 2),
+                            "Fair odds": round(1 / q, 2),
+                        }
+                        for h, v, q in top
+                    ],
+                    hide_index=True,
+                    use_container_width=True,
+                )
+
+                lefedes = sum(q for _, _, q in top) * 100
+
+                st.write(
+                    "Az öt eredmény együttes becsült esélye: "
+                    f"**{lefedes:.1f}%**. "
+                    "Minden más eredmény együtt: "
+                    f"**{100 - lefedes:.1f}%**."
+                )
+
+                st.warning(
+                    "A legvalószínűbb eredmény sem biztos tipp. "
+                    "Ezek a gólmodell becslései; "
+                    "a pontos eredmények pontosságát "
+                    "külön még nem teszteltük."
+                )
+
+                st.subheader("1X2 becslés")
+
+                nevek = [
+                    "Hazai győzelem",
+                    "Döntetlen",
+                    "Vendéggyőzelem",
+                ]
+
+                for nev, esely, odds in zip(
+                    nevek, p, [oh, od, ov]
+                ):
+                    with st.container(border=True):
+                        st.subheader(nev)
+
+                        st.metric(
+                            "Becsült esély",
+                            f"{esely * 100:.1f}%",
+                        )
+
+                        st.write(
+                            f"Fair odds: **{1 / esely:.2f}**"
+                        )
+
+                        st.metric(
+                            "Becsült várható hozam",
+                            f"{(esely * odds - 1) * 100:+.1f}%",
+                        )
+
+                st.caption(
+                    "Az alábbi forma tájékoztatás; "
+                    "külön nem módosítja a becslést."
+                )
+
+                forma_mutatasa(meccsek, hazai)
+                forma_mutatasa(meccsek, vendeg)
 
     with teszt:
-        st.subheader("Időrendi visszateszt")
+        st.subheader("Időrendi 1X2 visszateszt")
 
         st.write(
-            "Minden meccsnél kizárólag a korábbi napok "
-            "eredményeiből számolunk. Az aznapi meccsek "
-            "nem kerülnek a tanítóadatokba."
-        )
-
-        st.caption(
-            "Kezdeti feltétel: 60 ligameccs, továbbá "
-            "legalább 3 megfelelő hazai és "
-            "3 idegenbeli csapatmeccs."
+            "Minden meccsnél csak a korábbi napok "
+            "eredményeit használjuk. Kezdeti feltétel: "
+            "60 ligameccs és legalább 3 megfelelő hazai, "
+            "illetve idegenbeli csapatmeccs."
         )
 
         if st.button(
             "Visszateszt indítása",
             use_container_width=True,
         ):
-            with st.spinner(
-                "Korábbi mérkőzések tesztelése…"
-            ):
+            with st.spinner("Visszateszt…"):
                 sorok, kihagyott = visszateszt(meccsek)
 
             st.metric("Tesztelt mérkőzések", len(sorok))
@@ -407,15 +434,9 @@ def main():
                 f"Kihagyott mérkőzések: {kihagyott}"
             )
 
-            if not sorok:
-                st.warning(
-                    "Még nincs elég adat. "
-                    "Válaszd a 2025/26-os idényt."
-                )
-
-            else:
-                modell = sum(r[1] for r in sorok) / len(sorok)
-                alap = sum(r[2] for r in sorok) / len(sorok)
+            if sorok:
+                modell = sum(r[0] for r in sorok) / len(sorok)
+                alap = sum(r[1] for r in sorok) / len(sorok)
 
                 st.metric(
                     "Modell Brier-pontszáma",
@@ -427,53 +448,59 @@ def main():
                 )
 
                 st.caption(
-                    "Kisebb érték = pontosabb valószínűségi "
-                    "becslés. Az itt használt háromkimeneteles "
-                    "Brier-pontszám 0 és 2 közötti."
+                    "Kisebb érték = jobb. "
+                    "A háromkimeneteles Brier-pontszám "
+                    "0 és 2 közötti."
                 )
 
                 if modell < alap:
-                    st.success(
-                        "A modell ezen a mintán jobb volt "
-                        "a ligaátlagos becslésnél."
+                    st.write(
+                        "A modell ezen a mintán "
+                        "jobb volt a ligaátlagnál."
                     )
                 else:
-                    st.warning(
-                        "A modell ezen a mintán nem volt jobb "
-                        "a ligaátlagos becslésnél."
+                    st.write(
+                        "A modell ezen a mintán "
+                        "nem volt jobb a ligaátlagnál."
                     )
 
                 st.write(
-                    "A referencia a korábbi napok hazai "
-                    "győzelmeinek, döntetlenjeinek és "
-                    "vendéggyőzelmeinek arányát használja, "
+                    "A referencia a korábbi napok "
+                    "eredményarányait használja, "
                     "kimenetelenként egy kezdeti mintával. "
-                    "Mindkét módszert ugyanazokon a "
-                    "mérkőzéseken értékeljük."
+                    "Mindkét módszert ugyanazokon "
+                    "a meccseken mérjük."
                 )
 
-                st.warning(
-                    "Ez pontosságvizsgálat. "
-                    "Fogadási nyereséget nem mér, és nem "
-                    "bizonyít jövőbeli eredményességet."
+            else:
+                st.info(
+                    "Még nincs elég adat. "
+                    "Próbáld a 2025/26-os idényt."
                 )
+
+            st.warning(
+                "Ez az 1X2 esélyek tesztje. "
+                "Nem a pontos eredményeket és nem "
+                "a fogadási nyereséget vizsgálja."
+            )
 
     with st.expander("Módszer és korlátok"):
         st.write(
-            "Ligaátlaghoz viszonyított hazai és idegenbeli "
-            "gólátlagok, öt ligaátlagos mintameccses "
-            "simítással és független Poisson-eloszlással. "
-            "Sérüléseket és átigazolásokat nem kezelünk; "
-            "kevés meccsnél nagyobb a bizonytalanság."
+            "Ligaátlaghoz viszonyított gólátlagokat "
+            "használunk, öt ligaátlagos mintameccses "
+            "simítással. A két csapat góljait független "
+            "Poisson-eloszlással közelítjük. "
+            "A fair odds a becsült esély reciproka, "
+            "nem fogadóirodai ajánlat."
         )
 
         st.write(
-            "A mérkőzéselemzés teljes idényadatot használ, "
-            "ezért korábbi meccsen nem előzetes teszt. "
-            "A Visszateszt fül ezt időrendben kezeli. "
-            "A várható hozam: "
-            "(becsült esély × odds − 1) × 100%. "
-            "Nem garantált nyereség."
+            "Nem kezeljük külön az ellenfelek erősségét, "
+            "a sérüléseket és a kezdőcsapatokat. "
+            "A mérkőzéselemzés teljes idényadatot használ; "
+            "korábbi meccsre nem előzetes teszt. "
+            "A visszateszt időrendben számol. "
+            "Nincs garantált nyereség."
         )
 
     st.caption(
