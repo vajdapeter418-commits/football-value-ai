@@ -511,3 +511,254 @@ def main():
 
 if __name__ == "__main__":
     main()
+# FPL CSAPATHÍREK – a meglévő fájl legvégére másolandó
+import json as fpl_json
+from datetime import datetime as fpl_ido, timezone as fpl_zona
+
+
+@st.cache_data(ttl=1800)
+def fpl_betoltes():
+    keres = Request(
+        "https://fantasy.premierleague.com/api/bootstrap-static/",
+        headers={"User-Agent": "FootballValueAI/1.0"},
+    )
+
+    with urlopen(keres, timeout=25) as valasz:
+        adat = fpl_json.load(valasz)
+
+    if (
+        not isinstance(adat.get("teams"), list)
+        or not isinstance(adat.get("elements"), list)
+    ):
+        raise ValueError("Az FPL-adatforrás formátuma megváltozott.")
+
+    if not adat["teams"] or not adat["elements"]:
+        raise ValueError("Az FPL-adatforrás üres.")
+
+    ido = fpl_ido.now(fpl_zona.utc).strftime(
+        "%Y.%m.%d. %H:%M UTC"
+    )
+
+    return adat, ido
+
+
+def fpl_hirek(adat, csapat_id):
+    statuszok = {
+        "a": "Elérhetőként jelölve",
+        "d": "Kérdéses",
+        "i": "Sérültként jelölve",
+        "s": "Eltiltottként jelölve",
+        "u": "Nem elérhető",
+        "n": "Nem elérhetőként jelölve",
+    }
+
+    sorok = []
+
+    for j in adat["elements"]:
+        if j.get("team") != csapat_id:
+            continue
+
+        statusz = j.get("status")
+        hir = (j.get("news") or "").strip()
+        esely = j.get("chance_of_playing_next_round")
+
+        if (
+            statusz == "a"
+            and not hir
+            and (esely is None or esely == 100)
+        ):
+            continue
+
+        nev = " ".join(
+            filter(
+                None,
+                [j.get("first_name"), j.get("second_name")],
+            )
+        )
+
+        sorok.append({
+            "Játékos": nev or j.get("web_name", "Ismeretlen"),
+            "FPL-státusz": statuszok.get(
+                statusz, "Ismeretlen státusz"
+            ),
+            "FPL játékesély (%)": esely,
+            "Hír": hir or "Nincs szöveges információ.",
+            "Hír időpontja": j.get("news_added") or "Nem közölt",
+        })
+
+    return sorted(sorok, key=lambda r: r["Játékos"])
+
+
+def fpl_panel():
+    st.divider()
+    st.header("Csapathírek és kézzel rögzített kezdők")
+
+    st.info(
+        "Ez a panel az FPL jelenlegi adatait mutatja, "
+        "a fenti idényválasztótól függetlenül. "
+        "A csapatokat itt külön válaszd ki. "
+        "Az információk nem módosítják a modell esélyeit."
+    )
+
+    if st.button(
+        "FPL-csapathírek betöltése",
+        key="fpl_inditas",
+    ):
+        st.session_state["fpl_panel_aktiv"] = True
+
+    if not st.session_state.get("fpl_panel_aktiv"):
+        return
+
+    try:
+        with st.spinner("FPL-adatok betöltése…"):
+            adat, ido = fpl_betoltes()
+
+    except Exception as hiba:
+        st.error(
+            "Az FPL-adatok most nem tölthetők be. "
+            "A futballelemzés ettől még használható."
+        )
+
+        with st.expander("FPL-hiba részletei"):
+            st.text(f"{type(hiba).__name__}: {hiba}")
+
+        return
+
+    st.caption(
+        f"Utolsó sikeres lekérés: {ido} · "
+        "Legfeljebb 30 perces gyorsítótár."
+    )
+
+    st.warning(
+        "Az FPL-jelzés nem teljes sérüléslista és "
+        "nem hivatalos kezdőcsapat. A játékesély az "
+        "FPL következő fordulójára vonatkozik, "
+        "nem a kezdés esélye. A hiányzó adat "
+        "nem jelent biztos játékot."
+    )
+
+    csapatok = {
+        c["name"]: c["id"]
+        for c in adat["teams"]
+    }
+    nevek = sorted(csapatok)
+
+    hazai = st.selectbox(
+        "Csapathírek – hazai",
+        nevek,
+        key="fpl_hazai",
+    )
+
+    vendeg = st.selectbox(
+        "Csapathírek – vendég",
+        nevek,
+        index=min(1, len(nevek) - 1),
+        key="fpl_vendeg",
+    )
+
+    if hazai == vendeg:
+        st.warning(
+            "A csapathírekhez két különböző csapatot válassz."
+        )
+        return
+
+    datum = st.date_input(
+        "A vizsgált mérkőzés dátuma",
+        key="fpl_meccsnap",
+    )
+
+    st.caption(
+        "A kezdőket csapatonként és dátumonként külön "
+        "kezeljük. Csak ebben a böngészőmunkamenetben "
+        "maradnak meg; nem készül tartós mentés."
+    )
+
+    for nev in [hazai, vendeg]:
+        cid = csapatok[nev]
+        st.subheader(nev)
+        sorok = fpl_hirek(adat, cid)
+
+        if sorok:
+            st.dataframe(
+                sorok,
+                hide_index=True,
+                use_container_width=True,
+            )
+        else:
+            st.info(
+                "Az FPL-ben nincs megjeleníthető "
+                "figyelmeztetés vagy hír ehhez a csapathoz. "
+                "Ez nem igazolja, hogy minden játékos "
+                "bevethető."
+            )
+
+        azonosito = f"{cid}_{datum.isoformat()}"
+
+        with st.expander(
+            f"{nev} – hivatalos kezdő kézi rögzítése"
+        ):
+            st.caption(
+                "Csak a klub vagy a versenyszervező "
+                "közzététele után írd be. Játékosonként "
+                "egy sor, összesen 11 különböző név."
+            )
+
+            szoveg = st.text_area(
+                "Kezdő játékosok",
+                key=f"fpl_xi_{azonosito}",
+            )
+
+            forras = st.text_input(
+                "A közlés forrásának webcíme",
+                key=f"fpl_forras_{azonosito}",
+            )
+
+            megerositve = st.checkbox(
+                "Ellenőriztem a hivatalos közlést "
+                "ehhez a meccshez.",
+                key=f"fpl_ok_{azonosito}",
+            )
+
+            jatekosok = [
+                s.strip()
+                for s in szoveg.splitlines()
+                if s.strip()
+            ]
+
+            if megerositve:
+                if (
+                    len(jatekosok) != 11
+                    or len({j.casefold() for j in jatekosok}) != 11
+                ):
+                    st.warning(
+                        "Pontosan 11 különböző játékost "
+                        "adj meg, külön sorokban."
+                    )
+
+                elif not forras.strip().startswith(
+                    ("https://", "http://")
+                ):
+                    st.warning(
+                        "Add meg a hivatalos közlés webcímét is."
+                    )
+
+                else:
+                    st.success(
+                        "Felhasználó által hivatalos forrásból "
+                        "ellenőrzöttként megjelölve. "
+                        "Az alkalmazás a közlést nem hitelesítette."
+                    )
+
+            elif jatekosok:
+                st.info(
+                    "Kézi jegyzet – a hivatalos közlés "
+                    "még nincs visszaigazolva."
+                )
+
+    st.caption(
+        "Forrás: Fantasy Premier League. "
+        "A hírek az eredeti nyelven jelennek meg."
+    )
+
+
+fpl_panel()
