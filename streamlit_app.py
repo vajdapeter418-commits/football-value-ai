@@ -512,6 +512,8 @@ def main():
 if __name__ == "__main__":
     main()
 # FPL CSAPATHÍREK – a meglévő fájl legvégére másolandó
+
+   # FPL CSAPATHÍREK – mobilos játékoskártyák
 import json as fpl_json
 from datetime import datetime as fpl_ido, timezone as fpl_zona
 
@@ -540,6 +542,34 @@ def fpl_betoltes():
     )
 
     return adat, ido
+
+
+def fpl_kategoria(statusz, hir):
+    szoveg = hir.casefold()
+
+    tavozas = (
+        "has joined",
+        "has left",
+        "has departed",
+        "has been loaned",
+        "has moved to",
+        "contract terminated",
+        "contract has expired",
+    )
+
+    if any(minta in szoveg for minta in tavozas):
+        return "Távozás / kölcsönadás"
+
+    if statusz == "s":
+        return "Eltiltás"
+
+    if statusz == "i":
+        return "Sérülés"
+
+    if statusz == "d":
+        return "Kérdéses szereplés"
+
+    return "Egyéb / ellenőrizendő"
 
 
 def fpl_hirek(adat, csapat_id):
@@ -577,16 +607,94 @@ def fpl_hirek(adat, csapat_id):
         )
 
         sorok.append({
-            "Játékos": nev or j.get("web_name", "Ismeretlen"),
-            "FPL-státusz": statuszok.get(
+            "nev": nev or j.get("web_name", "Ismeretlen"),
+            "statusz": statuszok.get(
                 statusz, "Ismeretlen státusz"
             ),
-            "FPL játékesély (%)": esely,
-            "Hír": hir or "Nincs szöveges információ.",
-            "Hír időpontja": j.get("news_added") or "Nem közölt",
+            "kategoria": fpl_kategoria(statusz, hir),
+            "esely": esely,
+            "hir": hir or "Nincs szöveges információ.",
+            "hir_ideje": j.get("news_added") or "Nem közölt",
         })
 
-    return sorted(sorok, key=lambda r: r["Játékos"])
+    return sorted(sorok, key=lambda r: r["nev"])
+
+
+def fpl_kartyak(sorok, cid):
+    if not sorok:
+        st.info(
+            "Nincs megjeleníthető FPL-hír vagy figyelmeztetés. "
+            "Ez nem igazolja, hogy minden játékos bevethető."
+        )
+        return
+
+    kategoriak = [
+        "Sérülés",
+        "Eltiltás",
+        "Kérdéses szereplés",
+        "Távozás / kölcsönadás",
+        "Egyéb / ellenőrizendő",
+    ]
+
+    for kategoria in kategoriak:
+        darab = sum(
+            r["kategoria"] == kategoria
+            for r in sorok
+        )
+        st.write(f"{kategoria}: **{darab}**")
+
+    valasztott = st.multiselect(
+        "Megjelenített csoportok",
+        kategoriak,
+        default=kategoriak,
+        key=f"fpl_csoportok_{cid}",
+    )
+
+    lathato = [
+        r for r in sorok
+        if r["kategoria"] in valasztott
+    ]
+
+    if not lathato:
+        st.info(
+            "A kiválasztott csoportokban nincs "
+            "megjeleníthető játékos."
+        )
+
+    for kategoria in kategoriak:
+        csoport = [
+            r for r in lathato
+            if r["kategoria"] == kategoria
+        ]
+
+        if not csoport:
+            continue
+
+        st.markdown(f"#### {kategoria}")
+
+        for r in csoport:
+            with st.container(border=True):
+                st.text(r["nev"])
+                st.write(f"FPL-státusz: {r['statusz']}")
+
+                esely = r["esely"]
+
+                if esely is None:
+                    st.caption(
+                        "FPL-játékesély: nincs közölt adat."
+                    )
+                else:
+                    st.caption(
+                        "FPL-játékesély a következő fordulóra: "
+                        f"{esely}%"
+                    )
+
+                st.text(r["hir"])
+
+                st.caption(
+                    "A hír időpontja, a forrás szerint: "
+                    f"{r['hir_ideje']}"
+                )
 
 
 def fpl_panel():
@@ -637,6 +745,13 @@ def fpl_panel():
         "nem jelent biztos játékot."
     )
 
+    st.caption(
+        "A csoportosítás az FPL-státusz és egyes angol "
+        "hírfordulatok alapján készül. Az eredeti hírt "
+        "mindig megmutatjuk. A hír időpontja nem feltétlenül "
+        "az állapot utolsó ellenőrzése."
+    )
+
     csapatok = {
         c["name"]: c["id"]
         for c in adat["teams"]
@@ -675,22 +790,10 @@ def fpl_panel():
 
     for nev in [hazai, vendeg]:
         cid = csapatok[nev]
+
         st.subheader(nev)
         sorok = fpl_hirek(adat, cid)
-
-        if sorok:
-            st.dataframe(
-                sorok,
-                hide_index=True,
-                use_container_width=True,
-            )
-        else:
-            st.info(
-                "Az FPL-ben nincs megjeleníthető "
-                "figyelmeztetés vagy hír ehhez a csapathoz. "
-                "Ez nem igazolja, hogy minden játékos "
-                "bevethető."
-            )
+        fpl_kartyak(sorok, cid)
 
         azonosito = f"{cid}_{datum.isoformat()}"
 
@@ -761,4 +864,7 @@ def fpl_panel():
     )
 
 
-fpl_panel()
+fpl_panel()     
+
+
+
