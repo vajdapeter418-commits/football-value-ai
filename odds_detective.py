@@ -206,6 +206,61 @@ def get_json(endpoint, params=None, headers=None):
         return json.load(response)
 
 
+
+def list_football_leagues(api_key):
+    """Official catalogue, without an odds request or invented league keys."""
+    if not api_key:
+        raise ValueError("Hiányzik az ODDS_API_KEY.")
+    data = get_json("https://api.the-odds-api.com/v4/sports/", {"apiKey": api_key})
+    if not isinstance(data, list):
+        raise ValueError("A bajnokságlista nem elérhető.")
+    leagues = []
+    for item in data:
+        if not isinstance(item, dict):
+            raise ValueError("Hibás bajnokságlista.")
+        key = item.get("key", "")
+        if (isinstance(key, str) and key.startswith("soccer_") and
+                all(c.isalnum() or c == "_" for c in key) and item.get("active") is True
+                and item.get("has_outrights") is False):
+            if not isinstance(item.get("title"), str) or not item["title"].strip():
+                raise ValueError("Hiányzó bajnokságnév.")
+            leagues.append({"key": key, "title": item["title"]})
+    return sorted(leagues, key=lambda item: item["title"].casefold())
+
+
+def list_football_events(api_key, sport):
+    """Prematch/live catalogue only. Empty is not proof a match does not exist."""
+    if not api_key or not sport.startswith("soccer_") or not all(c.isalnum() or c == "_" for c in sport):
+        raise ValueError("Érvényes kulcs és labdarúgó-bajnokság szükséges.")
+    data = get_json(f"https://api.the-odds-api.com/v4/sports/{sport}/events", {"apiKey": api_key})
+    if not isinstance(data, list):
+        raise ValueError("A mérkőzéslista nem elérhető.")
+    events = []
+    for event in data:
+        if not isinstance(event, dict) or event.get("sport_key") != sport:
+            raise ValueError("Eltérő vagy hibás bajnokságadat.")
+        if not isinstance(event.get("id"), str) or not event["id"].isalnum():
+            raise ValueError("Hibás eseményazonosító.")
+        if any(not isinstance(event.get(k), str) or not event[k].strip() for k in ("home_team", "away_team")):
+            raise ValueError("Hiányzó csapatnév.")
+        events.append({"id": event["id"], "sport_key": sport,
+                       "home_team": event["home_team"], "away_team": event["away_team"],
+                       "commence_time": utc(event["commence_time"])})
+    return sorted(events, key=lambda event: (event["commence_time"], event["home_team"], event["id"]))
+
+
+def events_on_date(events, match_date):
+    datetime.strptime(match_date, "%Y-%m-%d")
+    return [event for event in events if utc(event["commence_time"])[:10] == match_date]
+
+
+def validate_event_binding(event, match, confirmed=False):
+    if utc(event["commence_time"])[:10] != match["match_date"]:
+        raise ValueError("A kiválasztott mérkőzés dátuma eltér a vizsgálatétól.")
+    if (event["home_team"], event["away_team"]) != (match["home"], match["away"]) and not confirmed:
+        raise ValueError("Az eltérő csapatnevek egyezését ellenőrizni kell.")
+
+
 def odds_records(event, expected_home, expected_away, expected_date):
     if (event.get("home_team"), event.get("away_team")) != (expected_home, expected_away):
         raise ValueError("Az API csapatnevei eltérnek. Ellenőrizd az eseményazonosítót és a csapatneveket.")

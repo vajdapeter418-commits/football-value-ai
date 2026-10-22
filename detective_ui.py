@@ -1,9 +1,12 @@
 """Streamlit presentation for evidence; existing model stays independent."""
 import json
 import os
+import hashlib
 from datetime import date, datetime, timezone
 import streamlit as st
-from odds_detective import Store, NA, movements, first_observed, collect_odds, collect_betfair, search_news, now
+from odds_detective import (Store, NA, movements, first_observed, collect_odds, collect_betfair,
+                            search_news, now, list_football_leagues, list_football_events,
+                            events_on_date, validate_event_binding)
 
 LABELS = {"source_checked": "API-forrásból beolvasva", "user_reported": "Felhasználó által megjelölve",
           "unverified": "Nem ellenőrzött", "rejected": "Elutasított"}
@@ -23,6 +26,89 @@ def display(records):
     return [{"Típus": r["kind"], "Forrás ideje (UTC)": r["source_time"] or NA,
              "Rögzítés ideje (UTC)": r["collected_at"], "Forrás": r["source"],
              "Állapot": LABELS[r["verification"]], "Adat": json.dumps(r["payload"], ensure_ascii=False)} for r in records]
+
+
+
+def odds_picker(store, match):
+    st.subheader("Bajnokság és mérkőzés kiválasztása")
+    key = secret("ODDS_API_KEY")
+    if not key:
+        st.warning("Nem elérhető – hiányzik az ODDS_API_KEY a Streamlit Secretsből.")
+        return
+    # Session-local catalogues only; no secret is stored in widget values or shared caches.
+    identity = hashlib.sha256(key.encode()).hexdigest()
+    state_key = "_odds_catalogues"
+    if st.session_state.get(state_key, {}).get("identity") != identity:
+        st.session_state[state_key] = {"identity": identity, "events": {}}
+    state = st.session_state[state_key]
+    st.caption("1. Töltsd be a bajnokságokat. 2. Válassz bajnokságot, majd töltsd be a mérkőzéseit. "
+               "3. Válassz mérkőzést, és kérd le az oddsokat. Nem kell azonosítókat bemásolnod. "
+               "A listák lekérése a szolgáltató dokumentációja szerint nem fogyaszt kreditet; az oddslekérés fogyaszthat.")
+    if st.button("Bajnokságok betöltése / frissítése", key="load_odds_leagues"):
+        try:
+            with st.spinner("Bajnokságlista lekérése…"):
+                leagues = list_football_leagues(key)
+            state["leagues"] = leagues
+            state["leagues_at"] = now()
+        except Exception:
+            state.pop("leagues", None)
+            st.error("Nem elérhető – nem sikerült betölteni a bajnokságokat. Ellenőrizd a Secretsben tárolt kulcsot és a kapcsolatot.")
+    if "leagues" not in state:
+        return
+    if not state["leagues"]:
+        st.info("Nem elérhető aktív, mérkőzéses labdarúgó-bajnokság az API válaszában.")
+        return
+    st.caption(f"Bajnokságlista lekérve (UTC): {state['leagues_at']}")
+    league = st.selectbox("Bajnokság", state["leagues"], index=None, placeholder="Válassz bajnokságot…",
+                          format_func=lambda row: row["title"], key=f"odds_league_{identity[:12]}")
+    if league is None:
+        return
+    sport = league["key"]
+    if st.button("Mérkőzések betöltése / frissítése", key="load_odds_events"):
+        try:
+            with st.spinner("Mérkőzéslista lekérése…"):
+                events = list_football_events(key, sport)
+            state["events"][sport] = {"rows": events, "at": now()}
+        except Exception:
+            state["events"].pop(sport, None)
+            st.error("Nem elérhető – a mérkőzéslista lekérése sikertelen. Próbáld újra később.")
+    catalogue = state["events"].get(sport)
+    if catalogue is None:
+        return
+    st.caption(f"Mérkőzéslista lekérve (UTC): {catalogue['at']}")
+    events = events_on_date(catalogue["rows"], match["match_date"])
+    if not events:
+        st.info(f"Nem elérhető mérkőzés ebben a bajnokságban a vizsgálat napjára ({match['match_date']}, UTC). "
+                "Ez lehet lefedettségi vagy időbeli korlát. A lista csak élő és közelgő mérkőzéseket tartalmaz; "
+                "hiányából nem következik, hogy a mérkőzés nem létezik. Korábbi adatot nem találunk ki.")
+        return
+    event = st.selectbox("Mérkőzés a vizsgálat napján", events, index=None, placeholder="Válassz mérkőzést…",
+        format_func=lambda row: f"{row['home_team']} – {row['away_team']} | {row['commence_time'][:16]} UTC",
+        key=f"odds_event_{match['id']}_{sport}_{identity[:12]}")
+    if event is None:
+        return
+    confirmed = False
+    if (event["home_team"], event["away_team"]) != (match["home"], match["away"]):
+        st.warning(f"A vizsgálat: {match['home']} – {match['away']}. Az API-ban a csapatnevek eltérnek; "
+                   "csak akkor ments ide adatot, ha valóban ugyanaz a párosítás és a hazai/vendég sorrend is egyezik.")
+        confirmed = st.checkbox("Ellenőriztem: ugyanaz a mérkőzés és a hazai/vendég sorrend.",
+                                key=f"odds_binding_{match['id']}_{event['id']}")
+    if st.button("Kiválasztott mérkőzés 1X2-oddsainak lekérése", key="fetch_selected_odds"):
+        try:
+            validate_event_binding(event, match, confirmed)
+        except ValueError as error:
+            st.warning(str(error))
+            return
+        try:
+            with st.spinner("1X2-pillanatkép lekérése…"):
+                count = collect_odds(store, match["id"], key, sport, event["id"], event["home_team"], event["away_team"])
+            if count:
+                st.success(f"Új oddsrekordok: {count}. Az idővonal és az adatnapló frissült.")
+            else:
+                st.info("Nem elérhető új, teljes 1X2-adat: lehet változatlan vagy hiányzó piac. Az esemény listázása nem garantál EU-oddsokat.")
+        except Exception:
+            st.error("Nem elérhető – az oddslekérés sikertelen. Ellenőrizd a hozzáférést és a kvótát; "
+                     "ha a mérkőzés már befejeződött, a friss listában nem feltétlenül szerepel.")
 
 
 def run():
@@ -68,21 +154,23 @@ def panel(store):
                     "[Betfair dokumentáció](https://betfair-developer-docs.atlassian.net/wiki/spaces/1smk3cen4v3lu3yomq5qye0ni/pages/2687510/listMarketBook)")
         st.caption("Az ingyenes kvóta és a bajnokság lefedettsége szolgáltatófüggő. Történelmi adatok nem feltétlenül ingyenesek. "
                    "A kulcsokat a Streamlit Secrets-ben add meg; a modul nem írja ki és nem tárolja őket.")
-        with st.form("odds_fetch"):
-            sport = st.text_input("Odds API sportkulcs", placeholder="soccer_…")
-            event = st.text_input("Odds API eseményazonosító")
-            ah = st.text_input("Pontos hazai név az API-ban", value=match["home"])
-            aa = st.text_input("Pontos vendégnév az API-ban", value=match["away"])
-            if st.form_submit_button("1X2-pillanatkép lekérése"):
-                key = secret("ODDS_API_KEY")
-                if not key:
-                    st.warning("Nem elérhető – hiányzik az ODDS_API_KEY.")
-                else:
-                    try:
-                        count = collect_odds(store, mid, key, sport, event, ah, aa)
-                        st.success(f"Új rekordok: {count}") if count else st.info("Nem elérhető új, teljes 1X2-adat; lehet változatlan vagy hiányzó piac.")
-                    except Exception:
-                        st.error("Nem elérhető – ellenőrizd az eseményt, a csapatneveket, a hozzáférést és a kvótát. Nem mentettünk hibás részadatot.")
+        odds_picker(store, match)
+        with st.expander("Haladó: azonosítók kézi megadása"):
+            with st.form("odds_fetch"):
+                sport = st.text_input("Odds API sportkulcs", placeholder="soccer_…")
+                event = st.text_input("Odds API eseményazonosító")
+                ah = st.text_input("Pontos hazai név az API-ban", value=match["home"])
+                aa = st.text_input("Pontos vendégnév az API-ban", value=match["away"])
+                if st.form_submit_button("1X2-pillanatkép lekérése"):
+                    key = secret("ODDS_API_KEY")
+                    if not key:
+                        st.warning("Nem elérhető – hiányzik az ODDS_API_KEY.")
+                    else:
+                        try:
+                            count = collect_odds(store, mid, key, sport, event, ah, aa)
+                            st.success(f"Új rekordok: {count}") if count else st.info("Nem elérhető új, teljes 1X2-adat; lehet változatlan vagy hiányzó piac.")
+                        except Exception:
+                            st.error("Nem elérhető – ellenőrizd az eseményt, a csapatneveket, a hozzáférést és a kvótát. Nem mentettünk hibás részadatot.")
         with st.form("betfair_fetch"):
             market = st.text_input("Betfair marketId")
             ids = {o: st.text_input(f"Betfair selectionId – {o}") for o in ("1", "X", "2")}
