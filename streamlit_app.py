@@ -218,12 +218,6 @@ def letoltes(kod):
 
 
 def main():
-    st.set_page_config(
-        page_title="Football Value AI",
-        page_icon="⚽",
-        layout="centered",
-    )
-
     st.title("⚽ Football Value AI")
 
     ideny = st.selectbox("Idény", ["2026/27", "2025/26"])
@@ -509,8 +503,6 @@ def main():
     )
 
 
-if __name__ == "__main__":
-    main()
 # FPL CSAPATHÍREK – a meglévő fájl legvégére másolandó
 
    # FPL CSAPATHÍREK – mobilos játékoskártyák
@@ -864,7 +856,15 @@ def fpl_panel():
     )
 
 
-fpl_panel()     
+if __name__ == "__main__":
+    st.set_page_config(page_title="Football Value AI", page_icon="⚽", layout="centered")
+    oldal = st.sidebar.radio("Funkció", ["Mérkőzéselemzés és FPL", "Oddsmozgás-nyomozó"])
+    if oldal == "Oddsmozgás-nyomozó":
+        from detective_ui import run
+        run()
+    else:
+        main()
+        fpl_panel()
 
 
 
