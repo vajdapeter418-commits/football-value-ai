@@ -102,6 +102,7 @@ def pontos_eredmenyek(gh, gv):
 
 def visszateszt(meccsek):
     sorok = []
+    pontos_sorok = []
     kihagyott = 0
 
     for nap in sorted({m[4] for m in meccsek}):
@@ -129,7 +130,7 @@ def visszateszt(meccsek):
                 continue
 
             try:
-                p, *_ = becsles(mult, m[0], m[1])
+                p, gh, gv, *_ = becsles(mult, m[0], m[1])
             except ValueError:
                 kihagyott += 1
                 continue
@@ -147,7 +148,20 @@ def visszateszt(meccsek):
                 sum((a - b) ** 2 for a, b in zip(alap, cel)),
             ))
 
-    return sorok, kihagyott
+            # A pontos eredményeket ugyanazzal a múltbeli mintával
+            # becsüljük, mint az 1X2 kimeneteleket.
+            top = pontos_eredmenyek(gh, gv)
+            valos = (m[2], m[3])
+            pontos_sorok.append({
+                "top1": int(valos == top[0][:2]),
+                "top5": int(any(valos == (h, v) for h, v, _ in top)),
+                "top1_becsult": top[0][2],
+                "top5_becsult": sum(q for _, _, q in top),
+                "valos_eredmeny": f"{m[2]}–{m[3]}",
+                "elso_tipp": f"{top[0][0]}–{top[0][1]}",
+            })
+
+    return sorok, kihagyott, pontos_sorok
 
 
 def forma_mutatasa(meccsek, csapat):
@@ -407,7 +421,7 @@ def main():
                 forma_mutatasa(meccsek, vendeg)
 
     with teszt:
-        st.subheader("Időrendi 1X2 visszateszt")
+        st.subheader("Időrendi 1X2 és pontos eredmény visszateszt")
 
         st.write(
             "Minden meccsnél csak a korábbi napok "
@@ -421,7 +435,7 @@ def main():
             use_container_width=True,
         ):
             with st.spinner("Visszateszt…"):
-                sorok, kihagyott = visszateszt(meccsek)
+                sorok, kihagyott, pontos_sorok = visszateszt(meccsek)
 
             st.metric("Tesztelt mérkőzések", len(sorok))
             st.caption(
@@ -466,6 +480,13 @@ def main():
                     "a meccseken mérjük."
                 )
 
+                st.subheader("Pontos eredmények visszatesztje")
+                st.metric("Első tipp találati aránya", f"{100 * sum(r['top1'] for r in pontos_sorok) / len(pontos_sorok):.1f}%")
+                st.metric("Top 5 lefedettsége", f"{100 * sum(r['top5'] for r in pontos_sorok) / len(pontos_sorok):.1f}%")
+                st.write(f"Átlagos becsült top 1 esély: **{100 * sum(r['top1_becsult'] for r in pontos_sorok) / len(pontos_sorok):.1f}%**")
+                st.write(f"Átlagos becsült top 5 esély: **{100 * sum(r['top5_becsult'] for r in pontos_sorok) / len(pontos_sorok):.1f}%**")
+                st.caption("A becsült és tényleges arányok összevetése első kalibrációs ellenőrzés; önmagában nem bizonyít fogadási előnyt.")
+
             else:
                 st.info(
                     "Még nincs elég adat. "
@@ -473,9 +494,8 @@ def main():
                 )
 
             st.warning(
-                "Ez az 1X2 esélyek tesztje. "
-                "Nem a pontos eredményeket és nem "
-                "a fogadási nyereséget vizsgálja."
+                "A teszt az 1X2 esélyeket és a pontos eredmények "
+                "top 1/top 5 találatait méri. Nem vizsgál fogadási nyereséget."
             )
 
     with st.expander("Módszer és korlátok"):
@@ -505,7 +525,7 @@ def main():
 
 # FPL CSAPATHÍREK – a meglévő fájl legvégére másolandó
 
-   # FPL CSAPATHÍREK – mobilos játékoskártyák
+# FPL CSAPATHÍREK – mobilos játékoskártyák
 import json as fpl_json
 from datetime import datetime as fpl_ido, timezone as fpl_zona
 
