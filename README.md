@@ -67,3 +67,24 @@ python -m compileall -q .
 ```
 
 A teszt-fixture-ök mesterséges adatai kizárólag memóriabeli tesztadatbázisba kerülnek, nem az éles vizsgálatba. A csomag ellenőrzésekor 11 teszt ment át (adatimport, küszöb, időbélyeg, Exchange, visszateszt és eredeti modell). Streamlit-futtatás, böngészős ellenőrzés és éles API-hívás nem volt elvégezhető ebben a környezetben a függőségtelepítés/hálózat korlátozása és API-hozzáférések hiánya miatt. A GitHub-kódtár és a futó alkalmazás nincs automatikusan frissítve.
+
+
+## Napi mérkőzéskeresés és előzmények
+
+Az Oddsmozgás-nyomozó új munkamenetben a **Napi mérkőzéskeresés** nézettel indul.
+A dátum az aktuális Europe/Budapest naptári nap; a kézi dátumválasztás az aktív
+munkamenetben megmarad, napváltáskor is. Új böngészőmunkamenetben ismét a mai nap
+az alapérték. A kezdési időpontok budapesti idő szerint jelennek meg, a nyári/téli
+időszámítás figyelembevételével.
+
+A bajnokságokat és a kiválasztott bajnokság mérkőzéseit a betöltés / frissítés
+gombok kérik le. A dátumváltás és a felület újrafutása a munkamenetben már betöltött
+listát használja, nem indít új API-hívást. Az API csak élő/közelgő eseményeket adhat;
+a kiválasztott napra hiányzó találatot nem pótoljuk kitalált adatokkal. Az oddsok
+lekérése továbbra is külön, felhasználói gombnyomáshoz kötött, kreditet fogyaszthat.
+
+A napi listából létrehozott vizsgálat automatikusan megnyílik a **Mentett vizsgálatok /
+előzmények** nézetben. A kézi létrehozás is az új vizsgálatot választja ki.
+A mentett vizsgálatok dátuma továbbra is UTC-nap: API-eseménynél ezt a kezdési
+időpontból számítjuk, ezért éjfél körül eltérhet a keresés magyar napjától.
+A korábbi vizsgálatok és bizonyítékok változatlanok; nincs adatbázis-migráció.

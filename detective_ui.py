@@ -6,7 +6,8 @@ from datetime import datetime, timezone
 import streamlit as st
 from odds_detective import (Store, NA, movements, first_observed, collect_odds, collect_betfair,
                             search_news, now, list_football_leagues, list_football_events,
-                            events_on_date, validate_event_binding)
+                            events_on_date, validate_event_binding, budapest_today, budapest_time,
+                            events_on_budapest_date, utc)
 
 LABELS = {"source_checked": "API-forrásból beolvasva", "user_reported": "Felhasználó által megjelölve",
           "unverified": "Nem ellenőrzött", "rejected": "Elutasított"}
@@ -29,7 +30,23 @@ def display(records):
 
 
 
-def odds_picker(store, match):
+def open_investigation(mid):
+    # Apply on the next run, before either keyed widget is instantiated.
+    st.session_state["_pending_investigation"] = mid
+    st.rerun()
+
+
+def daily_search(store):
+    st.subheader("Napi mérkőzéskeresés")
+    if "daily_match_day" not in st.session_state:
+        st.session_state["daily_match_day"] = budapest_today()
+    day = st.date_input("Keresési nap (Europe/Budapest)", key="daily_match_day")
+    st.caption("A kezdési időket magyar idő szerint mutatjuk. A nap módosítása a már betöltött listát szűri; "
+               "API-lekérés csak a betöltés / frissítés gombokkal történik.")
+    odds_picker(store, None, day.isoformat())
+
+
+def odds_picker(store, match, search_day=None):
     st.subheader("Bajnokság és mérkőzés kiválasztása")
     key = secret("ODDS_API_KEY")
     if not key:
@@ -76,16 +93,30 @@ def odds_picker(store, match):
     if catalogue is None:
         return
     st.caption(f"Mérkőzéslista lekérve (UTC): {catalogue['at']}")
-    events = events_on_date(catalogue["rows"], match["match_date"])
+    daily = search_day is not None
+    day = search_day if daily else match["match_date"]
+    zone = "Europe/Budapest" if daily else "UTC"
+    events = (events_on_budapest_date(catalogue["rows"], day) if daily
+              else events_on_date(catalogue["rows"], day))
     if not events:
-        st.info(f"Nem elérhető mérkőzés ebben a bajnokságban a vizsgálat napjára ({match['match_date']}, UTC). "
+        st.info(f"Nem elérhető mérkőzés ebben a bajnokságban a kiválasztott napra ({day}, {zone}). "
                 "Ez lehet lefedettségi vagy időbeli korlát. A lista csak élő és közelgő mérkőzéseket tartalmaz; "
                 "hiányából nem következik, hogy a mérkőzés nem létezik. Korábbi adatot nem találunk ki.")
         return
-    event = st.selectbox("Mérkőzés a vizsgálat napján", events, index=None, placeholder="Válassz mérkőzést…",
-        format_func=lambda row: f"{row['home_team']} – {row['away_team']} | {row['commence_time'][:16]} UTC",
-        key=f"odds_event_{match['id']}_{sport}_{identity[:12]}")
+    event = st.selectbox("Mérkőzés a kiválasztott napon", events, index=None, placeholder="Válassz mérkőzést…",
+        format_func=lambda row: (f"{row['home_team']} – {row['away_team']} | "
+            + (budapest_time(row["commence_time"]).strftime("%Y-%m-%d %H:%M %Z") if daily
+               else row["commence_time"][:16] + " UTC")),
+        key=f"odds_event_{day if daily else match['id']}_{sport}_{identity[:12]}")
     if event is None:
+        return
+    if daily:
+        st.caption("A mentett vizsgálat UTC-napja az API kezdési időpontjából származik; eltérhet a magyar naptári naptól.")
+        if st.button("Vizsgálat létrehozása a kiválasztott mérkőzéshez", key="create_daily_investigation"):
+            mid = store.add_match(event["home_team"], event["away_team"],
+                                  utc(event["commence_time"])[:10],
+                                  "https://api.the-odds-api.com/v4/sports/" + sport + "/events/" + event["id"])
+            open_investigation(mid)
         return
     confirmed = False
     if (event["home_team"], event["away_team"]) != (match["home"], match["away"]):
@@ -113,7 +144,7 @@ def odds_picker(store, match):
 
 def run():
     st.title("🔎 Oddsmozgás-nyomozó")
-    st.caption("Ellenőrizhető megfigyelések • 1X2, rendes játékidő • minden időpont UTC")
+    st.caption("Ellenőrizhető megfigyelések • 1X2, rendes játékidő • napi keresés: Europe/Budapest • mentett bizonyítékok: UTC")
     st.info("Az oddsmozgás nem bizonyít manipulációt. A hírek időbeli közelsége nem igazol ok-okozati kapcsolatot.")
     st.warning("A gyűjtés csak a gomb megnyomásakor vagy külön ütemezett CLI-futtatáskor történik. "
                "A korábbi pillanatképek nem pótolhatók becsléssel. Streamlit Cloudon a helyi adatbázis elveszhet; rendszeresen exportáld.")
@@ -130,6 +161,15 @@ def run():
 
 
 def panel(store):
+    if "_pending_investigation" in st.session_state:
+        st.session_state["saved_investigation"] = st.session_state.pop("_pending_investigation")
+        st.session_state["detective_view"] = "Mentett vizsgálatok / előzmények"
+    view = st.radio("Nézet", ["Napi mérkőzéskeresés", "Mentett vizsgálatok / előzmények"],
+                    key="detective_view")
+    if view == "Napi mérkőzéskeresés":
+        daily_search(store)
+        return
+    st.subheader("Mentett vizsgálatok / előzmények")
     with st.expander("Új vizsgálat"):
         with st.form("new_investigation"):
             home = st.text_input("Hazai csapat")
@@ -138,13 +178,20 @@ def panel(store):
             source = st.text_input("Mérkőzés forrás-URL-je")
             if st.form_submit_button("Vizsgálat létrehozása"):
                 try:
-                    store.add_match(home, away, day.isoformat(), source)
-                    st.success("Vizsgálat létrehozva; az esemény még felhasználói ellenőrzésű.")
+                    mid = store.add_match(home, away, day.isoformat(), source)
+                    open_investigation(mid)
                 except ValueError as e:
                     st.error(str(e))
     matches = store.matches()
-    match = st.selectbox("Vizsgált mérkőzés", matches,
-        format_func=lambda m: f"{m['home']} – {m['away']} | {m['match_date']}")
+    if not matches:
+        st.info("Még nincs mentett vizsgálat.")
+        return
+    by_id = {m["id"]: m for m in matches}
+    if st.session_state.get("saved_investigation") not in by_id:
+        st.session_state["saved_investigation"] = matches[0]["id"]
+    selected = st.selectbox("Vizsgált mérkőzés (UTC-nap)", list(by_id), key="saved_investigation",
+        format_func=lambda mid: f"{by_id[mid]['home']} – {by_id[mid]['away']} | {by_id[mid]['match_date']}")
+    match = by_id[selected]
     mid = match["id"]
     st.caption(f"Mérkőzés forrása: {match['source']} · Rögzítve: {match['created_at']} · {LABELS[match['verification']]}")
     collect, analysis, news, archive = st.tabs(["Adatgyűjtés", "Idővonal és grafikonok", "Hírek és eredmény", "Adatnapló és export"])
@@ -321,3 +368,4 @@ def panel(store):
                 st.dataframe(display(selected), hide_index=True)
         except ValueError as e:
             st.error(str(e))
+
