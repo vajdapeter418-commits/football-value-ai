@@ -2,7 +2,7 @@
 import json
 import os
 import hashlib
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 import streamlit as st
 from odds_detective import (Store, NA, movements, first_observed, collect_odds, collect_betfair,
                             search_news, now, list_football_leagues, list_football_events,
@@ -134,7 +134,7 @@ def panel(store):
         with st.form("new_investigation"):
             home = st.text_input("Hazai csapat")
             away = st.text_input("Vendégcsapat")
-            day = st.date_input("Mérkőzés napja (UTC)", value=date(2026, 10, 22))
+            day = st.date_input("Mérkőzés napja (UTC)", value=datetime.now(timezone.utc).date())
             source = st.text_input("Mérkőzés forrás-URL-je")
             if st.form_submit_button("Vizsgálat létrehozása"):
                 try:
