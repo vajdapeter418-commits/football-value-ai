@@ -27,9 +27,13 @@ def authorized():
         return False
     if len(str(password))<12:
         st.info('A naplóhoz legalább 12 karakteres saját jelszót állíts be.');return False
-    entered=st.text_input('Napló jelszava',type='password',key='forecast_password')
+    with st.form('forecast_login_form'):
+        entered=st.text_input('Napló jelszava',type='password',key='forecast_password')
+        submitted=st.form_submit_button('Belépés')
     if not entered or not hmac.compare_digest(str(entered).encode('utf-8'),str(password).encode('utf-8')):
-        st.caption('A napló eléréséhez és módosításához add meg a saját naplójelszavadat.')
+        if submitted:
+            st.error('A megadott naplójelszó nem egyezik a beállított jelszóval.')
+        st.caption('Írd be a saját naplójelszavadat, majd koppints a Belépés gombra.')
         return False
     return True
 
