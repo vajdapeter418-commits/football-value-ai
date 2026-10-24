@@ -9,6 +9,95 @@ from prematch_archive import Archive, API_FOOTBALL, fetch, stamp
 FIXTURE_URL=API_FOOTBALL+'fixtures?league=39&season=2024&date=2024-08-16'
 TEAM_IDS={33,36}
 ERROR='A lekérés vagy az adatellenőrzés nem sikerült. A nyers válasz nem jelenik meg.'
+DIAG_MESSAGES={
+    'plan':'A szolgáltató csomag- vagy idénykorlátozást jelzett ennél a mérkőzéslekérésnél.',
+    'auth':'A szolgáltató hitelesítési vagy hozzáférési hibát jelzett.',
+    'quota':'A szolgáltató lekérési vagy sebességkorlátot jelzett.',
+    'request':'A szolgáltató hibás vagy nem támogatott lekérési paramétert jelzett.',
+    'provider':'A szolgáltató hibát jelzett; a pontos válasz nem jelenik meg.',
+    'empty':'A szolgáltató nem adott mérkőzést erre a liga–idény–nap lekérésre.',
+    'envelope':'A szolgáltatói válasz formátuma vagy lapozása eltér a várttól.',
+    'identity':'Érkezett mérkőzés, de nem egyezik az elvárt liga, idény, nap, csapat vagy lezárt státusz.',
+    'transport':'A HTTP- vagy hálózati lekérés nem sikerült.',
+    'valid':'A megismételt egyetlen mérkőzéslekérés és az azonosítás most sikerült. A részadatok még nincsenek ezzel ellenőrizve.',
+    'local':'A helyi mentés vagy ellenőrzés nem sikerült.',
+    'unavailable':'Ez a diagnózis csak a mai, részlekérések előtt elakadt saját mérkőzéspróbához indítható.',
+    'busy':'A mai egyszeri diagnózis már elindult. Új szolgáltatói lekérés nem történik.',
+}
+
+
+def provider_failure(data):
+    """Classify private provider error text into a fixed code; never return text."""
+    errors=data.get('errors') if isinstance(data,dict) else None
+    if not errors:
+        return None
+    text=json.dumps(errors,ensure_ascii=True).lower()
+    if any(token in text for token in ['rate limit','ratelimit','too many','request limit','quota']):
+        return 'quota'
+    if any(token in text for token in ['subscription','free plan','season','plan']):
+        return 'plan'
+    if any(token in text for token in ['token','api-key','api key','access','permission']):
+        return 'auth'
+    if any(token in text for token in ['parameter','date','fixture','league']):
+        return 'request'
+    return 'provider'
+
+
+def diagnose_fixture(api_key,db_path):
+    """One additional GET only after an initial failure that made at most one GET.
+
+    Successful/fuller audits cannot use this path. Shared daily reservation and
+    persistent reuse keep total requests <= 2 for this failed-audit recovery path.
+    """
+    at=datetime.now(timezone.utc);result={'checked_at':stamp(at),'code':'local'}
+    archive=None
+    if not isinstance(api_key,str) or not api_key.strip():
+        return {**result,'code':'unavailable'}
+    try:
+        archive=Archive(db_path);db=archive.db;day=at.date().isoformat()
+        fingerprint=hashlib.sha256(api_key.encode()).hexdigest()
+        db.execute('CREATE TABLE IF NOT EXISTS match_sample_diagnoses(day TEXT PRIMARY KEY, result TEXT)')
+        db.commit();db.execute('BEGIN IMMEDIATE')
+        previous=db.execute('SELECT result FROM match_sample_diagnoses WHERE day=?',(day,)).fetchone()
+        audit=db.execute('SELECT fingerprint,result FROM match_sample_checks WHERE day=?',(day,)).fetchone()
+        saved=json.loads(audit[1]) if audit and audit[1] else None
+        if (not audit or audit[0]!=fingerprint or not saved or saved.get('ok') is not False or saved.get('parts')!={}):
+            db.rollback();return {**result,'code':'unavailable'}
+        if previous:
+            db.rollback();return json.loads(previous[0]) if previous[0] else {**result,'code':'busy'}
+        db.execute('INSERT INTO match_sample_diagnoses VALUES(?,NULL)',(day,));db.commit()
+        try:
+            observation=fetch(FIXTURE_URL,api_key=api_key)
+        except Exception:
+            result['code']='transport'
+        else:
+            try:
+                data=json.loads(observation.body)
+                code=provider_failure(data)
+                if code:
+                    result['code']=code
+                else:
+                    items=rows(observation)
+                    if not items:
+                        result['code']='empty'
+                    else:
+                        try:
+                            fixture_identity(items)
+                        except Exception:
+                            result['code']='identity'
+                        else:
+                            result['code']='valid'
+                            archive.save('api_football_sample','2024-08-16:fixture-diagnosis',(observation,))
+            except Exception:
+                result['code']='envelope'
+        with db:
+            db.execute('UPDATE match_sample_diagnoses SET result=? WHERE day=?',(json.dumps(result),day))
+        return result
+    except Exception:
+        return {**result,'code':'local'}
+    finally:
+        if archive is not None:
+            archive.close()
 
 
 def rows(observation):
@@ -142,6 +231,14 @@ def render(st,key,db_path):
                'Az ismételt kattintás a mentett eredményt mutatja. Csak az alábbi gomb indítja.')
     st.info('Utólag lekért történeti adat. Nem bizonyítja, mit tudhattunk a kezdés előtt; '
             'nem használjuk múltbeli előrejelzéshez vagy a modell módosításához.')
+    st.caption('Ha az első mérkőzéslekérés elakadt: az alábbi külön diagnózis egyszer, '
+               'legfeljebb 1 további API-hívással megkülönbözteti a szolgáltatói korlátozást, '
+               'az üres választ és az azonosítási eltérést. A napi sikeres próbát nem indítja újra.')
+    if st.button('Sikertelen mérkőzéspróba okának ellenőrzése',disabled=not bool(key),key='match_diagnosis_button'):
+        with st.spinner('Hiba okának ellenőrzése…'):
+            diagnosis=diagnose_fixture(key,db_path)
+        st.caption('Diagnózis ideje (UTC): '+diagnosis['checked_at'])
+        st.info(DIAG_MESSAGES[diagnosis['code']])
     if st.button('2024/25-ös mérkőzés adatainak ellenőrzése',disabled=not bool(key),key='match_sample_button'):
         with st.spinner('Mérkőzésadatok ellenőrzése…'):
             result=probe(key,db_path)
