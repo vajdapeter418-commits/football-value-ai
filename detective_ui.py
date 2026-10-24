@@ -111,6 +111,9 @@ def odds_picker(store, match, search_day=None):
     if event is None:
         return
     if daily:
+        if sport == "soccer_epl":
+            from forecast_journal_ui import capture_event
+            capture_event(event)
         st.caption("A mentett vizsgálat UTC-napja az API kezdési időpontjából származik; eltérhet a magyar naptári naptól.")
         if st.button("Vizsgálat létrehozása a kiválasztott mérkőzéshez", key="create_daily_investigation"):
             mid = store.add_match(event["home_team"], event["away_team"],

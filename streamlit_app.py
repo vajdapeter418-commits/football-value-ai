@@ -885,9 +885,12 @@ def fpl_panel():
 
 if __name__ == "__main__":
     st.set_page_config(page_title="Football Value AI", page_icon="⚽", layout="centered")
-    oldal = st.sidebar.radio("Funkció", ["Mérkőzéselemzés és FPL", "Oddsmozgás-nyomozó", "API-kapcsolat ellenőrzése"])
+    oldal = st.sidebar.radio("Funkció", ["Mérkőzéselemzés és FPL", "Oddsmozgás-nyomozó", "API-kapcsolat ellenőrzése", "Tippek naplója"])
     if oldal == "Oddsmozgás-nyomozó":
         from detective_ui import run
+        run()
+    elif oldal == "Tippek naplója":
+        from forecast_journal_ui import run
         run()
     elif oldal == "API-kapcsolat ellenőrzése":
         from api_connection_ui import run
