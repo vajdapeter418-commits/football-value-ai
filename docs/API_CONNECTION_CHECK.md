@@ -59,6 +59,8 @@ A korábbi általános „nem érhető el” üzenet helyett fix, titokérték n
 
 # Konkrét mérkőzéspróba
 
+Az első, részlekérések előtti hiba után külön diagnózisgomb egyszer, legfeljebb egy további, azonos URL-re menő GET-tel ellenőrizheti az okot. Csak azonos kulcs és aktuális napi, lezárt sikertelen eredmény (`ok=False`, `parts={}`) jogosít erre, így ezen az ágon összesen legfeljebb két GET történhet. Sikeres vagy részlekéréseket már végző próba nem kaphat plusz lekérést. Külön napi SQLite-foglalás és mentett, fix kódú eredmény védi a keretet. A szolgáltatói hibaszöveg kizárólag kategorizálásra szolgál; sem az, sem kulcs, sem kivételszöveg nem kerül ki a felületre. A kategória önmagában nem bizonyítja az előfizetés minden részletét.
+
 Az API-kapcsolat menü alján külön gomb indítja a 2024-08-16-i Manchester United–Fulham mérkőzés ellenőrzését. Egy szigorúan rögzített `/fixtures?league=39&season=2024&date=2024-08-16` hívás után ellenőrzi a liga, idény, UTC-nap, hazai/vendég csapatazonosítók és FT státusz egyezését. Csak az így kapott pozitív fixture ID használható a három további végponthoz: `/fixtures/statistics`, `/fixtures/lineups`, `/injuries`.
 
 A próba legfeljebb 4 GET, nincs átirányítás vagy újrapróbálkozás. A meglévő legfeljebb napi 5 kapcsolati hívás mellett külön naponta egy, legfeljebb 4 hívásos közös kerete van. SQLite tranzakció foglalja le az UTC-napot hálózati kérés előtt; sikertelen és megszakadt próba is fogyasztja a keretet. Az azonos kulccsal történő ismételt kattintás a biztonságos összesítést olvassa a SQLite-ból, nem újabb szolgáltatói kérés. Helyi adatbázisvesztés visszaállítja e korlátot is.
