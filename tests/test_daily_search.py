@@ -2,6 +2,7 @@
 from contextlib import contextmanager
 from datetime import date, datetime
 import importlib
+from pathlib import Path
 import sys
 import unittest
 from unittest.mock import MagicMock, patch
@@ -18,10 +19,10 @@ def ui_context():
     st.form_submit_button.return_value = False
     st.rerun.side_effect = RuntimeError('rerun')
     with patch.dict(sys.modules, {'streamlit': st}):
-        sys.modules.pop('detective_ui', None)
-        ui = importlib.import_module('detective_ui')
+        spec = importlib.util.spec_from_file_location('detective_ui_fixture', Path(__file__).parents[1] / 'detective_ui.py')
+        ui = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ui)
         yield ui, st
-    sys.modules.pop('detective_ui', None)
 
 
 class DailyDates(unittest.TestCase):
@@ -121,3 +122,4 @@ class DailyDates(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
