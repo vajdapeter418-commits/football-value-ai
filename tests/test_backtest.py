@@ -6,6 +6,7 @@ import sys
 import types
 import unittest
 from datetime import date, timedelta
+from unittest.mock import patch
 
 
 def load_app():
@@ -60,13 +61,51 @@ class ModelTests(unittest.TestCase):
         self.assertTrue(all(0 <= r["top1_becsult"] <= r["top5_becsult"] <= 1 for r in correct))
         self.assertTrue(all(math.isfinite(a) and math.isfinite(b) for a, b in scores))
 
-        # Modifying the last day's results must not change that day's forecasts.
-        changed = list(matches)
-        changed[-1] = (*changed[-1][:2], 9, 9, changed[-1][4])
-        before, _, _ = self.app.visszateszt(matches[:-2])
-        after, _, _ = self.app.visszateszt(changed[:-2])
-        self.assertEqual(before, after)
+        # Retain the modified day and later records in both executions.
+        # The estimator must receive only strictly earlier match dates.
+        cutoff = matches[-4][4]
+        changed = [(h, v, 9, 8, d) if d >= cutoff else (h, v, hg, vg, d)
+                   for h, v, hg, vg, d in matches]
+        predictions = []
+        original = self.app.becsles
+        def inspect(history, home, away):
+            result = original(history, home, away)
+            predictions.append((tuple(history), home, away, result))
+            return result
+        with patch.object(self.app, 'becsles', side_effect=inspect):
+            _, _, before = self.app.visszateszt(matches)
+        recorded = list(predictions)
+        self.assertEqual(len(recorded), len(before))
+        for row, (history, home, away, result) in zip(before, recorded):
+            self.assertTrue(all(d.isoformat() < row['datum'] for *_, d in history))
+            self.assertEqual((home, away), (row['hazai'], row['vendeg']))
+        _, _, after = self.app.visszateszt(changed)
+        eligible = [(a, b) for a, b in zip(before, after) if a['datum'] == cutoff.isoformat()]
+        self.assertEqual(len(eligible), 2)
+        for a, b in eligible:
+            for field in ['top1_becsult', 'top5_becsult', 'elso_tipp', 'top5_tippek']:
+                self.assertEqual(a[field], b[field])
+        self.assertEqual(self.app.visszateszt(matches[:-2])[2], before[:-2])
+
+    def test_empty_and_warmup_only(self):
+        self.assertEqual(self.app.visszateszt([]), ([], 0, []))
+        matches = [('A', 'B', 1, 1, date(2025, 8, 1))] * 20
+        self.assertEqual(self.app.visszateszt(matches), ([], 20, []))
+
+    def test_exact_score_hits_and_deterministic_ties(self):
+        matches = [('A', 'B', 1, 1, date(2025, 8, 1) + timedelta(days=i)) for i in range(62)]
+        _, skipped, rows = self.app.visszateszt(matches)
+        self.assertEqual(skipped, 60)
+        self.assertEqual(len(rows), 2)
+        for row in rows:
+            self.assertEqual(row['elso_tipp'], '0–0')
+            self.assertEqual(row['top1'], 0)
+            self.assertEqual(row['top5'], 1)
+            self.assertEqual(row['valos_eredmeny'], '1–1')
+            self.assertAlmostEqual(row['top1_becsult'], math.exp(-2))
+            self.assertAlmostEqual(row['top5_becsult'], 4.5 * math.exp(-2))
 
 
 if __name__ == "__main__":
     unittest.main()
+
