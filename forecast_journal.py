@@ -102,6 +102,9 @@ class Journal:
             recorded=utc(now())
             if recorded<captured or kickoff<=recorded+timedelta(minutes=5):
                 raise ValueError('Clock moved backwards or kickoff too close at commit')
+            last=self.db.execute('SELECT payload FROM forecast_journal ORDER BY id DESC LIMIT 1').fetchone()
+            if last and recorded<utc(json.loads(last[0])['recorded_at']):
+                raise ValueError('Clock precedes previous forecast')
             payload['recorded_at']=recorded.isoformat()
             key=digest(fixture)
             # Same provider fixture cannot be re-entered under a changed kickoff/team.
