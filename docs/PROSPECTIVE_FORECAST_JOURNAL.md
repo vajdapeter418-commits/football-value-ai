@@ -2,7 +2,7 @@
 
 2026-10-24. Alap: main `e2610499a5934282e6c6cde97b5c56b27cd6c985`. A már látott történeti tesztek és kalibrációs kísérletek nem adnak új, független bizonyítékot. Ehhez a következő mérkőzések előtt ténylegesen elmentett előrejelzések kellenek.
 
-**Ez a változás külön, kézzel indítható naplózási alap, nem aktív éles adatgyűjtés.** Nem módosítja a Streamlit oldalt, a baseline-t vagy a kalibrációt, és nem függ a PR #4-től. Nem indít hálózati kérést, időzítést vagy API-kulcs-olvasást. A meglévő `prematch_archive.py` szolgáltatói megfigyeléseket tárol; ez a külön modul a modell konkrét előrejelzését és bemeneti mintáját fagyasztja be, más táblában/adatbázisban.
+**A CLI-alap mellé gombnyomásos Streamlit-felület, privát felhőarchívum és eredményértékelés is készült.** A baseline-t vagy a kalibrációt nem módosítja, és nem függ a PR #4-től. Valódi felhőgyűjtés csak a privát tároló és a Secrets-hozzáférés beállítása, majd sikeres éles roundtrip után igazolható. Beállítás és használat: [CLOUD_FORECAST_SETUP.md](CLOUD_FORECAST_SETUP.md). A CLI nem indít hálózati kérést. A külön UI az engedélyezett tulajdonos kérésére nyilvános CSV-t és privát felhőnaplót olvas/ír; nincs háttérgyűjtés vagy API-FOOTBALL-hívás. A meglévő `prematch_archive.py` szolgáltatói megfigyeléseket tárol; ez a külön modul a modell konkrét előrejelzését és bemeneti mintáját fagyasztja be, más táblában/adatbázisban.
 
 ## Mentett tartalom
 
@@ -36,7 +36,7 @@ python forecast_journal.py --db /path/to/forecasts.sqlite3 verify
 python forecast_journal.py --db /path/to/forecasts.sqlite3 export --output /path/to/forecasts-export.json
 ```
 
-A fenti nevek és kezdés helyőrzők, nem valódi meccsek. Nincs beégetett tesztmérkőzés vagy automatikus hívás. A telefonos felhasználónak ezt a CLI-t nem kell futtatnia; a következő integráció biztosíthat gombnyomásos mentést az ellenőrzött mérkőzésválasztóból.
+A fenti nevek és kezdés helyőrzők, nem valódi meccsek. Nincs beégetett tesztmérkőzés vagy automatikus hívás. A telefonos felhasználónak ezt a CLI-t nem kell futtatnia; a gombnyomásos felületi bekötés elkészült az EPL-mérkőzésválasztóhoz.
 
 ## A következő, valóban új mérés elfogadási terve
 
@@ -46,12 +46,12 @@ A gyűjtés még nem indult. Az alábbi tervet aktiválás előtt véglegesíten
 2. A kezdés legkorábban 2026-10-25, illetve a tényleges naplózási aktiválás utáni első teljes budapesti naptól lehet; korábbi meccs nem pótolható utólag. A bevont időszakot és meccslistát az eredmények előtt rögzítjük. Az első 200 időrendben sorra kerülő jogosult Premier League-fixture legyen a tervezett cél; a kimaradásokat, halasztásokat és hibákat is kötelező naplózni. Nem választhatjuk utólag csak a sikeresen mentett vagy eltalált meccseket.
 3. A mentés csak ellenőrzött kezdés előtt történhet. Az eredményeket később, külön forrásból kell csatolni; hosszabbítás/büntetők kizártak. A naplóbejegyzést az eredménycsatolás nem módosíthatja.
 4. Előre kijelölt kiértékelési ponton NLL, 1X2 Brier, top-1/top-5 találati arány, becsült esélyek, napcsoportos bizonytalanság és teljes lefedettségi/kimaradási kimutatás kell. Addig nincs menet közbeni hangolás vagy kedvező ponton való leállítás. Elégtelen mintán a következtetés elégtelen, nem siker.
-5. A végleges kezdőnap, ellenőrzött fixture-manifest, tartós mentési útvonal, felületi bekötés, eredménycsatoló/értékelő és a tényleges gyűjtés indulásának igazolása még külön integrációs feladat. A mostani változás ezeket nem állítja késznek.
+5. A felületi bekötés, eredménycsatoló és privát felhőadapter elkészült. A privát tároló/Secrets beállítása és a valódi roundtrip még szükséges. A végleges kezdőnap, ellenőrzött teljes fixture-manifest és a tényleges kutatási gyűjtés indulásának igazolása továbbra is külön aktiválási lépés; ezt a felület nem indítja el magától.
 
 ## Validáció
 
-A jelenlegi main 52 tesztje és nyolc új naplóteszt együtt: **60/60 sikeres, 5.678 s**, nincs skip. Compileall és CLI `--help` sikeres. A tesztek ideiglenes adatbázist és mesterséges CSV-t használnak; nem készül éles próbaelőrejelzés.
+A jelenlegi main 52 tesztje és 24 új napló/felhő/felületi teszt együtt: **76/76 sikeres**; a legutóbbi futási idő a PR-ben rögzített, nincs skip. Compileall és CLI `--help` sikeres. A tesztek ideiglenes adatbázist és mesterséges CSV-t használnak; nem készül éles próbaelőrejelzés.
 
 Ellenőrizve: változatlan baseline-egyezés; kétbejegyzéses hash-lánc/export; aznapi és jövőbeli eredményinvariancia; múltbeli/közeli/naiv kezdés tiltása; duplikált meccs védelme megváltoztatott ID-val/kezdéssel is; SQL-felülírás/törlés tiltása és sérülésészlelés; tranzakciós óra-/kezdésellenőrzés és rollback; hibás forrás/dupla vagy elégtelen előzmény elutasítása; két párhuzamos mentésből pontosan egy bejegyzés.
 
-A fejlesztés önálló draft PR mainre, PR #4 összeolvasztása nélkül. Nincs telepítés, módosult éles tipp, háttérgyűjtés vagy jövőbeli eredményből előállított próbateljesítmény.
+A fejlesztés önálló PR mainre, PR #4 összeolvasztása nélkül. Nincs új előrejelzési modell, háttérgyűjtés vagy jövőbeli eredményből előállított próbateljesítmény. Beállítás nélküli felület nem állítja magáról, hogy felhőbe mentett.
