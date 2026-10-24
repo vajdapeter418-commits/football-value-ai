@@ -161,6 +161,9 @@ def run():
 
 
 def panel(store):
+    # Keep the selected day when Streamlit removes hidden daily-view widgets.
+    if "daily_match_day" in st.session_state:
+        st.session_state["daily_match_day"] = st.session_state["daily_match_day"]
     if "_pending_investigation" in st.session_state:
         st.session_state["saved_investigation"] = st.session_state.pop("_pending_investigation")
         st.session_state["detective_view"] = "Mentett vizsgálatok / előzmények"
@@ -368,4 +371,5 @@ def panel(store):
                 st.dataframe(display(selected), hide_index=True)
         except ValueError as e:
             st.error(str(e))
+
 
