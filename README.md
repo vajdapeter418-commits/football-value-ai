@@ -67,3 +67,118 @@ python -m compileall -q .
 ```
 
 A teszt-fixture-ök mesterséges adatai kizárólag memóriabeli tesztadatbázisba kerülnek, nem az éles vizsgálatba. A csomag ellenőrzésekor 11 teszt ment át (adatimport, küszöb, időbélyeg, Exchange, visszateszt és eredeti modell). Streamlit-futtatás, böngészős ellenőrzés és éles API-hívás nem volt elvégezhető ebben a környezetben a függőségtelepítés/hálózat korlátozása és API-hozzáférések hiánya miatt. A GitHub-kódtár és a futó alkalmazás nincs automatikusan frissítve.
+
+
+## Kísérleti Exact Score Hunter – csapaterősség
+
+A baseline marad az alapértelmezés. A `poisson_model.py` a main változatlan
+`becsles`, `goltabla`, `pontos_eredmenyek` függvényeit tartalmazza; a Streamlit
+ugyanezeket importálja, a `becsles` visszatérése változatlan öt elem.
+A közös új belépési pont: `team_strength.predict(snapshot, home, away, config)`.
+A felület és a párosított visszateszt ezt használja.
+
+A core helyszínfüggő támadó/engedettgól-paramétereket közösen illeszt, súlyozott
+Poisson-likelihood és ridge alapján. `a>0` erősebb támadás, `d>0` több engedett gól,
+tehát gyengébb védekezés. Alapérték: felezési idő 90 nap, ridge 5, extra ridge 10;
+a súlyok nincsenek újranormalizálva. A determinisztikus koordináta-Newton
+backtrackinget használ; a teljes gradiens maximum abszolút értéke legfeljebb
+1e-8, legfeljebb 500 iteráció. Kis lépés önmagában nem konvergencia.
+A baseline-hoz képest a teljes korrekció 0.75–1.25 arányra korlátozott.
+A nyers core/extra hatás és a korlát külön látható; hibánál baseline fallback,
+indokkal. Nincs új futtatási függőség.
+
+Az új modulok: `asof_features.py` (rekordok, snapshotok, extra transzformációk),
+`team_strength.py` (modell, scaler/extra tanítás), `correct_score_backtest.py`
+(párosított értékelés, CLI). Egyetlen ligán/idényen belül dolgoznak.
+
+### Időbeli szerződés
+
+- `historical_results_replay`: csak a célmeccs és a cutoff UTC-napja előtti
+  rendes játékidős befejezett eredmények. A dátumos CSV-ből nem gyártunk
+  kezdési/publikálási/rögzítési időt. A CLI napi éjféli cutoffja értékelési
+  határ, nem állított tényleges kezdés. Ez retrospektív eredmény-visszateszt,
+  nem korabeli adatarchívum bizonyítéka; utólagos forrásjavítást nem zár ki.
+- `strict_asof`: kizárólag ismert kezdés/befejezés és ellenőrzött bizonyíték;
+  effective_at, published_at, captured_at mind szigorúan cutoff előtti.
+  Egyenlőség kizárt. A verziók megmaradnak; a késői import/javítás nem ír múltat.
+  A jelenlegi dátumos CSV és mai FPL-pillanatkép ehhez elégtelen.
+
+A snapshot a célmeccs labeljét nem tartalmazza. A hash csak a kiválasztott
+snapshotból készül, jövőbeli rekord nem része. Minden előrejelzés cutoffot,
+snapshot-/config-hash-t, modellverziót, mintaszámot és fallback-indokot ad.
+A core illesztés cache-e cutoffhoz, kiválasztott rekordokhoz és confighoz kötött;
+azonos napi meccsek/ablációk ugyanazt az illesztést használják. Az Odds-nyomozó
+UTC-napjait, adatbázisát és API-kvótakezelését nem módosítja.
+
+### Extra adatséma és archívumstátusz
+
+Az immutable `Evidence`, `ExtraStat`, `Match`, `Request` rekordok pontos
+mezői az `asof_features.py` fájlban találhatók. Kötelező a szolgáltató,
+rekordazonosító, verzió, raw-hash, ellenőrzési státusz, három UTC-időbélyeg,
+mértékegység, definíció, nevező és lefedettség. Ismeretlen érték `None`.
+
+- xG: `total_xg_for/against`, `xG/match`, `total_xg_v1`, nevező `match`.
+  Pontrúgással együtt kizárólag `open_xg_for/against` / `open_xg_v1` használható;
+  a pontrúgás külön `set_xg_for/against` / `set_xg_v1`. Ligaátlaghoz simított
+  logarány, öt mintameccses prior. Nulla ligaátlag ismeretlen/inaktív.
+- Stílus: `ppda`, `pressured_losses`, `counter_for/against`, a kódban rögzített
+  szolgáltatói definícióval és nevezővel. Liga-standardizált pressing×labdavesztés
+  és kontra×engedett kontra interakció; hírszöveg nem numerikus feature.
+- Játékos: célmeccshez kötött `player_minutes`, `player_unavailable`,
+  `player_att/def`, `player_replacement_att/def`, pozíció és játékosazonosító.
+  Definíció `higher_is_better_v1`, nevező `pre_match`; a rating nagyobb értéke
+  jobb teljesítmény. Percek előzetesen várhatók; kiesési valószínűség csak
+  igazolt 0 vagy 1. FPL chance és tényleges lejátszott perc nem bemenet.
+  Hiányzó helyettes/rating/percek esetén a veszteség ismeretlen.
+
+A szolgáltatókat/egységeket nem keverjük. A tanítóidőszakból illesztett scaler
+[-3,3]-ra vág; ismeretlen érték numerikusan 0, külön ismeretlenségi jelzővel.
+A hiányjelző nem kap rejtett koefficienst. Teljesen hiányzó blokk hatása nulla.
+Az extra ridge-regresszió rögzített, saját múltból becsült core offsetet használ;
+200 időhelyesen értékelhető tanítómeccs alatt nincs aktív extra modell.
+A tanítási artifact megőrzi a scaler-paramétereket, koefficienseket,
+feature-sémát, határidőt és tanítási hash-t. Nincs kézzel kiosztott éles β.
+
+**Nincs bekötött valós xG-, pontrúgás-, stílus- vagy játékosarchívum.**
+Az interfész és a szintetikus tesztek nem jelentenek éles adatkapcsolatot vagy
+igazolt javulást. A felületen ezért csak baseline/core választható.
+Strict archívumok és extra modellek programozottan adhatók át; a CLI jelenleg
+csak a dátumos eredmény-CSV replayét támogatja. Automatikus hiperparaméter-keresés
+nincs; a konfigurációt a mérés előtt rögzíteni kell.
+
+### Visszateszt UI nélkül
+
+Saját, jogszerűen beszerzett Football-Data CSV-vel:
+
+```sh
+python correct_score_backtest.py /path/E0.csv --season 2025/26 --output backtest-report.json
+python -m unittest discover -s tests -v
+python -m compileall -q .
+streamlit run streamlit_app.py
+```
+
+A JSON tartalmazza a bemeneti fájl SHA256-át/méretét, rekordhash-t, futásidőt,
+60/20/20 egyedi dátumos határokat, párosított denominátorokat, kihagyási és
+fallback-okokat, feature-lefedettséget, top-1/top-5 találatot és becsült
+lefedettséget, stabil log-PMF NLL-t, 1X2 Briert, Wilson-intervallumokat és
+napcsoportos páros bootstrap NLL-intervallumot (2000 újraminta, seed=42).
+Abláció: baseline, frissesség, core, külön extra blokkok, teljes konfiguráció.
+A visszateszt és bootstrap a felületen csak gombnyomásra indul.
+
+200-nál kevesebb érintetlen tesztmeccs vagy hiányzó extra archívum esetén a
+bizonyíték elégtelen. Aktiválás csak negatív teljes NLL-intervallum és nem romló
+Brier esetén javasolható; automatikus alapértelmezés-váltás nincs.
+Az Ipswich–Nottingham 1–1 felhasználó által jelzett top-1 találat, időbélyeges
+modellnapló nélkül nem hitelesített előrejelzés; nem hangoltunk rá.
+
+Az aktuális ellenőrzések és korlátok: [docs/VALIDATION.md](docs/VALIDATION.md).
+
+
+### Strict evaluator/archive separation
+
+`backtest(settled_labels, policy=STRICT, historical_matches=versioned_archive)`
+requires a separate historical archive. Settled labels only score predictions;
+the archive supplies cutoff-specific features and extra-model training labels.
+All versions of an ID may occur in the archive, while evaluator labels remain
+unique per ID. No strict archive is inferred from settled labels. The report
+records `input_hash` and `history_hash` separately.

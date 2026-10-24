@@ -1,7 +1,7 @@
 import csv
 import io
 import math
-from datetime import datetime
+from datetime import datetime, time, timezone
 from urllib.request import Request, urlopen
 
 import streamlit as st
@@ -37,117 +37,30 @@ def feldolgozas(raw):
     return meccsek
 
 
-def goltabla(gh, gv):
-    if not all(
-        math.isfinite(x) and 0 < x <= 20
-        for x in (gh, gv)
-    ):
-        raise ValueError("A gólátlag kívül esik a modell tartományán.")
-
-    ph = [math.exp(-gh)]
-    pv = [math.exp(-gv)]
-
-    for k in range(1, 101):
-        ph.append(ph[-1] * gh / k)
-        pv.append(pv[-1] * gv / k)
-
-    return [
-        (h, v, p * q)
-        for h, p in enumerate(ph)
-        for v, q in enumerate(pv)
-    ]
-
-
-def becsles(meccsek, hazai, vendeg):
-    lh = sum(m[2] for m in meccsek) / len(meccsek)
-    lv = sum(m[3] for m in meccsek) / len(meccsek)
-
-    h = [m for m in meccsek if m[0] == hazai]
-    v = [m for m in meccsek if m[1] == vendeg]
-
-    if not h or not v or min(lh, lv) <= 0:
-        raise ValueError("Nincs elég megfelelő csapatadat.")
-
-    hf = (sum(m[2] for m in h) + 5 * lh) / (len(h) + 5)
-    hc = (sum(m[3] for m in h) + 5 * lv) / (len(h) + 5)
-    vf = (sum(m[3] for m in v) + 5 * lv) / (len(v) + 5)
-    vc = (sum(m[2] for m in v) + 5 * lh) / (len(v) + 5)
-
-    gh = hf * vc / lh
-    gv = vf * hc / lv
-
-    p = [0.0, 0.0, 0.0]
-
-    for a, b, esely in goltabla(gh, gv):
-        index = 0 if a > b else 1 if a == b else 2
-        p[index] += esely
-
-    return (
-        [x / sum(p) for x in p],
-        gh,
-        gv,
-        len(h),
-        len(v),
-    )
-
-
-def pontos_eredmenyek(gh, gv):
-    tabla = sorted(
-        goltabla(gh, gv),
-        key=lambda r: (-r[2], r[0], r[1]),
-    )
-
-    return tabla[:5]
+from poisson_model import goltabla, becsles, pontos_eredmenyek
 
 
 def visszateszt(meccsek):
-    sorok = []
-    kihagyott = 0
-
-    for nap in sorted({m[4] for m in meccsek}):
-        mult = [m for m in meccsek if m[4] < nap]
-        mai = [m for m in meccsek if m[4] == nap]
-
-        if len(mult) < 60:
-            kihagyott += len(mai)
-            continue
-
-        alap = [1.0, 1.0, 1.0]
-
-        for m in mult:
-            index = 0 if m[2] > m[3] else 1 if m[2] == m[3] else 2
-            alap[index] += 1
-
-        alap = [x / (len(mult) + 3) for x in alap]
-
-        for m in mai:
-            hazai_db = sum(x[0] == m[0] for x in mult)
-            vendeg_db = sum(x[1] == m[1] for x in mult)
-
-            if hazai_db < 3 or vendeg_db < 3:
-                kihagyott += 1
-                continue
-
-            try:
-                p, *_ = becsles(mult, m[0], m[1])
-            except ValueError:
-                kihagyott += 1
-                continue
-
-            y = (
-                0 if m[2] > m[3]
-                else 1 if m[2] == m[3]
-                else 2
-            )
-
-            cel = [int(i == y) for i in range(3)]
-
-            sorok.append((
-                sum((a - b) ** 2 for a, b in zip(p, cel)),
-                sum((a - b) ** 2 for a, b in zip(alap, cel)),
-            ))
-
-    return sorok, kihagyott
+    """PR #1 top-score metrics, retaining its three-value return contract."""
+    from correct_score_backtest import backtest
+    from asof_features import adapt_tuples
+    report = backtest(adapt_tuples(meccsek))
+    scores, exact = [], []
+    for row in report['rows']:
+        past = [m for m in meccsek if str(m[4]) < row['date']]
+        prior = [1.0, 1.0, 1.0]
+        for m in past:
+            prior[0 if m[2]>m[3] else 1 if m[2]==m[3] else 2] += 1
+        prior = [v/(len(past)+3) for v in prior]
+        h,a = row['label']
+        y = 0 if h>a else 1 if h==a else 2
+        score = row['metrics']['baseline']
+        scores.append((score['brier'],sum((p-int(i==y))**2 for i,p in enumerate(prior))))
+        top = row['forecasts']['baseline']['candidate']['top5']
+        exact.append({'top1':score['top1'],'top5':score['top5'],
+                      'top1_becsult':score['estimated_top1'],'top5_becsult':score['estimated_top5'],
+                      'valos_eredmeny':f'{h}–{a}','elso_tipp':f'{top[0][0]}–{top[0][1]}'})
+    return scores, sum(report['skipped'].values()), exact
 
 
 def forma_mutatasa(meccsek, csapat):
@@ -255,8 +168,8 @@ def main():
     with elemzes:
         st.info(
             "Statisztikai becslés, nem élő adat. "
-            "A kiválasztott idény összes elérhető "
-            "eredményét használjuk."
+            "Csak a célmeccs és a cutoff napja előtti eredményeket használjuk. "
+            "Retrospektív eredmény-visszajátszás, korabeli adatarchívum nélkül."
         )
 
         with st.form("elemzes"):
@@ -265,6 +178,13 @@ def main():
                 "Vendégcsapat", csapatok, index=1
             )
 
+            target_date = st.date_input("Célmérkőzés dátuma (forrás szerinti nap)")
+            cutoff_date = st.date_input("Előrejelzési cutoff dátuma (Europe/Budapest)")
+            cutoff_time = st.time_input("Cutoff időpontja (Europe/Budapest)", value=time(12, 0))
+            mode = st.selectbox("Modell", ["baseline", "core"],
+                                format_func=lambda m: "Eredeti baseline" if m == "baseline" else "Kísérleti csapaterősség")
+            st.caption("A CSV kezdési és archiválási idő nélkül csak napalapú replayre alkalmas. "
+                       "Az extra blokkok inaktívak; nincs xG-/stílus-/játékosarchívum.")
             st.caption(
                 "Az aktuális, rendes játékidős "
                 "1X2 oddsokat add meg."
@@ -300,9 +220,17 @@ def main():
 
             else:
                 try:
-                    p, gh, gv, nh, nv = becsles(
-                        meccsek, hazai, vendeg
-                    )
+                    from asof_features import Request as PredictionRequest, adapt_tuples, snapshot, budapest
+                    from team_strength import Config, predict
+                    from zoneinfo import ZoneInfo
+                    cutoff = datetime.combine(cutoff_date, cutoff_time, tzinfo=ZoneInfo("Europe/Budapest"))
+                    request = PredictionRequest(hazai, vendeg, 'E0', ideny, target_date, cutoff)
+                    snap = snapshot(adapt_tuples(meccsek, season=ideny), request)
+                    prediction = predict(snap, hazai, vendeg, Config(mode=mode))
+                    p = prediction.candidate.one_x_two
+                    gh, gv = prediction.candidate.lambdas
+                    _, nh, nv = prediction.raw_counts
+                    snapshot_matches = [m.legacy() for m in snap.matches]
 
                 except ValueError as hiba:
                     st.error(str(hiba))
@@ -323,6 +251,32 @@ def main():
                 )
 
                 st.subheader(f"{hazai} – {vendeg}")
+                st.caption(f"Cutoff: {budapest(cutoff)} · {prediction.policy}")
+                st.caption(f"Snapshot: {prediction.snapshot_hash} · Modell: {prediction.model_version} "
+                           f"· Config: {prediction.config_hash}")
+                st.dataframe([
+                    {"Modell": label, "λ hazai": result.lambdas[0], "λ vendég": result.lambdas[1],
+                     "1 (%)": 100*result.one_x_two[0], "X (%)": 100*result.one_x_two[1],
+                     "2 (%)": 100*result.one_x_two[2], "Levágott faroktömeg": result.tail_mass}
+                    for label, result in (("Baseline", prediction.baseline), ("Kiválasztott", prediction.candidate))
+                ], hide_index=True, use_container_width=True)
+                st.dataframe([
+                    {"Modell": label, "Eredmény": f"{h}–{a}", "Esély (%)": 100*q, "Fair odds": 1/q}
+                    for label, result in (("Baseline", prediction.baseline), ("Kiválasztott", prediction.candidate))
+                    for h,a,q in result.top5
+                ], hide_index=True, use_container_width=True)
+                st.write({"Nyers core λ": prediction.core_lambdas, "Extrák loghatása": prediction.extra_delta,
+                          "Nyers korrekció": prediction.raw_ratios, "Alkalmazott korrekció": prediction.applied_ratios,
+                          "Korlát aktív": prediction.clipped, "Mintaszám": prediction.raw_counts,
+                          "Effektív mintaszám": prediction.effective_counts,
+                          "Aktív jelzések": prediction.active_signals, "Hiányzó jelzések": prediction.missing_signals})
+                if prediction.fallback_reason:
+                    st.warning(f"Baseline fallback: {prediction.fallback_reason}")
+                if prediction.team_parameters:
+                    st.caption("a > 0: erősebb támadás; d > 0: több engedett gól, gyengébb védekezés.")
+                    st.dataframe([{"Csapat": t, "Hazai a": ah, "Hazai d": dh, "Vendég a": aa, "Vendég d": da}
+                                  for t,ah,dh,aa,da in prediction.team_parameters if t in (hazai,vendeg)],
+                                 hide_index=True, use_container_width=True)
 
                 st.write(
                     f"Becsült gólátlag: **{gh:.2f} – {gv:.2f}**"
@@ -366,8 +320,7 @@ def main():
                 st.warning(
                     "A legvalószínűbb eredmény sem biztos tipp. "
                     "Ezek a gólmodell becslései; "
-                    "a pontos eredmények pontosságát "
-                    "külön még nem teszteltük."
+                    "a visszateszt a külön fülön, kattintásra indul."
                 )
 
                 st.subheader("1X2 becslés")
@@ -403,80 +356,28 @@ def main():
                     "külön nem módosítja a becslést."
                 )
 
-                forma_mutatasa(meccsek, hazai)
-                forma_mutatasa(meccsek, vendeg)
+                forma_mutatasa(snapshot_matches, hazai)
+                forma_mutatasa(snapshot_matches, vendeg)
 
     with teszt:
-        st.subheader("Időrendi 1X2 visszateszt")
-
-        st.write(
-            "Minden meccsnél csak a korábbi napok "
-            "eredményeit használjuk. Kezdeti feltétel: "
-            "60 ligameccs és legalább 3 megfelelő hazai, "
-            "illetve idegenbeli csapatmeccs."
-        )
-
-        if st.button(
-            "Visszateszt indítása",
-            use_container_width=True,
-        ):
-            with st.spinner("Visszateszt…"):
-                sorok, kihagyott = visszateszt(meccsek)
-
-            st.metric("Tesztelt mérkőzések", len(sorok))
-            st.caption(
-                f"Kihagyott mérkőzések: {kihagyott}"
-            )
-
-            if sorok:
-                modell = sum(r[0] for r in sorok) / len(sorok)
-                alap = sum(r[1] for r in sorok) / len(sorok)
-
-                st.metric(
-                    "Modell Brier-pontszáma",
-                    f"{modell:.3f}",
-                )
-                st.metric(
-                    "Ligaátlagos becslés Brier-pontszáma",
-                    f"{alap:.3f}",
-                )
-
-                st.caption(
-                    "Kisebb érték = jobb. "
-                    "A háromkimeneteles Brier-pontszám "
-                    "0 és 2 közötti."
-                )
-
-                if modell < alap:
-                    st.write(
-                        "A modell ezen a mintán "
-                        "jobb volt a ligaátlagnál."
-                    )
-                else:
-                    st.write(
-                        "A modell ezen a mintán "
-                        "nem volt jobb a ligaátlagnál."
-                    )
-
-                st.write(
-                    "A referencia a korábbi napok "
-                    "eredményarányait használja, "
-                    "kimenetelenként egy kezdeti mintával. "
-                    "Mindkét módszert ugyanazokon "
-                    "a meccseken mérjük."
-                )
-
-            else:
-                st.info(
-                    "Még nincs elég adat. "
-                    "Próbáld a 2025/26-os idényt."
-                )
-
-            st.warning(
-                "Ez az 1X2 esélyek tesztje. "
-                "Nem a pontos eredményeket és nem "
-                "a fogadási nyereséget vizsgálja."
-            )
+        st.subheader("Párosított időrendi pontoseredmény-visszateszt")
+        st.caption("60 korábbi ligameccs, csapatonként 3 helyszín szerinti meccs; napalapú 60/20/20 osztás. "
+                   "A bootstrap 2000 napcsoportos újramintát használ (seed=42). Nem profitmérés.")
+        if st.button("Visszateszt indítása", use_container_width=True):
+            from correct_score_backtest import backtest
+            from asof_features import adapt_tuples
+            with st.spinner("Időrendi illesztés és bootstrap…"):
+                report = backtest(adapt_tuples(meccsek, season=ideny))
+            st.metric("Tesztelt mérkőzések", report['evaluated'])
+            st.write({k:v for k,v in report.items() if k not in ('rows','summary')})
+            for part, summary in report['summary'].items():
+                st.subheader(part)
+                st.dataframe([{"Modell": k, **v} for k,v in summary.items()],
+                             hide_index=True, use_container_width=True)
+            if report['evidence'] == 'insufficient':
+                st.warning("Elégtelen bizonyíték: 200-nál kevesebb érintetlen tesztmeccs vagy hiányzó extra archívum.")
+            st.download_button("Teljes JSON-jelentés", __import__('json').dumps(report, ensure_ascii=False, indent=2),
+                               "backtest-report.json", "application/json")
 
     with st.expander("Módszer és korlátok"):
         st.write(
@@ -489,10 +390,9 @@ def main():
         )
 
         st.write(
-            "Nem kezeljük külön az ellenfelek erősségét, "
-            "a sérüléseket és a kezdőcsapatokat. "
-            "A mérkőzéselemzés teljes idényadatot használ; "
-            "korábbi meccsre nem előzetes teszt. "
+            "A kísérleti core ellenfélerősséget és 90 napos frissességet illeszt (ridge=5). "
+            "A teljes korrekció a baseline-hoz képest ±25%-ra korlátozott. "
+            "A sérülések és kezdők adatarchívum nélkül inaktívak. "
             "A visszateszt időrendben számol. "
             "Nincs garantált nyereség."
         )
@@ -507,7 +407,7 @@ def main():
 
    # FPL CSAPATHÍREK – mobilos játékoskártyák
 import json as fpl_json
-from datetime import datetime as fpl_ido, timezone as fpl_zona
+from datetime import datetime, time, timezone as fpl_ido, timezone as fpl_zona
 
 
 @st.cache_data(ttl=1800)
@@ -865,6 +765,7 @@ if __name__ == "__main__":
     else:
         main()
         fpl_panel()
+
 
 
 
