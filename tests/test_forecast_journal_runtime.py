@@ -42,18 +42,33 @@ class JournalRuntimeTests(unittest.TestCase):
         return app
 
     def unlock(self,app):
-        next(x for x in app.text_input if x.label=='Napló jelszava').set_value('fixture-password').run()
+        next(x for x in app.text_input if x.label=='Napló jelszava').set_value('fixture-password')
+        next(x for x in app.button if x.label=='Belépés').click().run()
         self.assertFalse(app.exception)
 
     def test_missing_config_and_wrong_password_never_access_cloud(self):
         with patch.dict(os.environ,{'FORECAST_ARCHIVE_TOKEN':'','FORECAST_JOURNAL_PASSWORD':'','FORECAST_ARCHIVE_REPOSITORY':''}):
             app=self.app(secrets=False)
         self.assertEqual(self.cloud.loads,0);self.assertEqual(self.cloud.writes,0)
-        app=self.app();app.text_input[0].set_value('wrong').run()
+        app=self.app();app.text_input[0].set_value('wrong')
+        next(x for x in app.button if x.label=='Belépés').click().run()
+        self.assertTrue(app.error)
         self.assertEqual(self.cloud.loads,0)
         app.secrets['FORECAST_JOURNAL_PASSWORD']='árvíz-fixture'
-        app.text_input[0].set_value('árvíz-fixture').run()
+        app.text_input[0].set_value('árvíz-fixture')
+        next(x for x in app.button if x.label=='Belépés').click().run()
         self.assertFalse(app.exception);self.assertEqual(self.cloud.loads,1)
+
+    def test_password_requires_explicit_submit_and_stays_valid_on_refresh(self):
+        app=self.app()
+        app.text_input[0].set_value('fixture-password')
+        self.assertEqual(self.cloud.loads,0)
+        next(x for x in app.button if x.label=='Belépés').click().run()
+        self.assertFalse(app.exception)
+        self.assertEqual(self.cloud.loads,1)
+        app.button(key='refresh_forecast_archive').click().run()
+        self.assertFalse(app.exception)
+        self.assertEqual(self.cloud.loads,2)
 
     def test_daily_selected_match_save_then_new_session_restores_cloud(self):
         league={'key':'soccer_epl','title':'EPL'}
