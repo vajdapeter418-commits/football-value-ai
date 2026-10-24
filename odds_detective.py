@@ -6,6 +6,7 @@ import math
 import os
 import sqlite3
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
@@ -249,6 +250,19 @@ def list_football_events(api_key, sport):
     return sorted(events, key=lambda event: (event["commence_time"], event["home_team"], event["id"]))
 
 
+def budapest_today():
+    return datetime.now(ZoneInfo("Europe/Budapest")).date()
+
+
+def budapest_time(value):
+    return datetime.fromisoformat(utc(value)).astimezone(ZoneInfo("Europe/Budapest"))
+
+
+def events_on_budapest_date(events, day):
+    datetime.strptime(day, "%Y-%m-%d")
+    return [event for event in events if budapest_time(event["commence_time"]).date().isoformat() == day]
+
+
 def events_on_date(events, match_date):
     datetime.strptime(match_date, "%Y-%m-%d")
     return [event for event in events if utc(event["commence_time"])[:10] == match_date]
@@ -384,3 +398,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

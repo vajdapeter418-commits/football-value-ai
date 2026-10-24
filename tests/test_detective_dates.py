@@ -15,7 +15,9 @@ class DetectiveDates(unittest.TestCase):
         widget = next(node for node in ast.walk(tree)
                       if isinstance(node, ast.Call)
                       and isinstance(node.func, ast.Attribute)
-                      and node.func.attr == 'date_input')
+                      and node.func.attr == 'date_input'
+                      and node.args and isinstance(node.args[0], ast.Constant)
+                      and node.args[0].value == 'Mérkőzés napja (UTC)')
         default = next(kw.value for kw in widget.keywords if kw.arg == 'value')
         expression = compile(ast.Expression(default), '<date default>', 'eval')
         for instant in ('2026-10-23T00:01:00+00:00', '2026-10-24T00:01:00+00:00'):
@@ -52,3 +54,4 @@ class DetectiveDates(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
