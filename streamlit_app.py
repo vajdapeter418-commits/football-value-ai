@@ -153,12 +153,16 @@ def visszateszt(meccsek):
             top = pontos_eredmenyek(gh, gv)
             valos = (m[2], m[3])
             pontos_sorok.append({
+                "datum": nap.isoformat(),
+                "hazai": m[0],
+                "vendeg": m[1],
                 "top1": int(valos == top[0][:2]),
                 "top5": int(any(valos == (h, v) for h, v, _ in top)),
                 "top1_becsult": top[0][2],
                 "top5_becsult": sum(q for _, _, q in top),
                 "valos_eredmeny": f"{m[2]}–{m[3]}",
                 "elso_tipp": f"{top[0][0]}–{top[0][1]}",
+                "top5_tippek": [(h, v, q) for h, v, q in top],
             })
 
     return sorok, kihagyott, pontos_sorok
@@ -482,7 +486,7 @@ def main():
 
                 st.subheader("Pontos eredmények visszatesztje")
                 st.metric("Első tipp találati aránya", f"{100 * sum(r['top1'] for r in pontos_sorok) / len(pontos_sorok):.1f}%")
-                st.metric("Top 5 lefedettsége", f"{100 * sum(r['top5'] for r in pontos_sorok) / len(pontos_sorok):.1f}%")
+                st.metric("Top 5 találati aránya", f"{100 * sum(r['top5'] for r in pontos_sorok) / len(pontos_sorok):.1f}%")
                 st.write(f"Átlagos becsült top 1 esély: **{100 * sum(r['top1_becsult'] for r in pontos_sorok) / len(pontos_sorok):.1f}%**")
                 st.write(f"Átlagos becsült top 5 esély: **{100 * sum(r['top5_becsult'] for r in pontos_sorok) / len(pontos_sorok):.1f}%**")
                 st.caption("A becsült és tényleges arányok összevetése első kalibrációs ellenőrzés; önmagában nem bizonyít fogadási előnyt.")
@@ -492,6 +496,9 @@ def main():
                     "Még nincs elég adat. "
                     "Próbáld a 2025/26-os idényt."
                 )
+
+            st.caption("A teszt végleges történeti eredményadatokból számol. A korábbi napok eredményeit használja; "
+                       "az adatok akkori szolgáltatói elérhetőségét és későbbi javításait archívum nélkül nem igazolja.")
 
             st.warning(
                 "A teszt az 1X2 esélyeket és a pontos eredmények "
@@ -878,13 +885,17 @@ def fpl_panel():
 
 if __name__ == "__main__":
     st.set_page_config(page_title="Football Value AI", page_icon="⚽", layout="centered")
-    oldal = st.sidebar.radio("Funkció", ["Mérkőzéselemzés és FPL", "Oddsmozgás-nyomozó"])
+    oldal = st.sidebar.radio("Funkció", ["Mérkőzéselemzés és FPL", "Oddsmozgás-nyomozó", "API-kapcsolat ellenőrzése"])
     if oldal == "Oddsmozgás-nyomozó":
         from detective_ui import run
+        run()
+    elif oldal == "API-kapcsolat ellenőrzése":
+        from api_connection_ui import run
         run()
     else:
         main()
         fpl_panel()
+
 
 
 
