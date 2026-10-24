@@ -16,6 +16,8 @@ test_filter_uses_event_utc_date (test_detective_dates.DetectiveDates.test_filter
 test_new_investigation_defaults_to_current_utc_day (test_detective_dates.DetectiveDates.test_new_investigation_defaults_to_current_utc_day) ... ok
 test_offset_crosses_utc_day_boundary (test_detective_dates.DetectiveDates.test_offset_crosses_utc_day_boundary) ... ok
 test_timezone_required (test_detective_dates.DetectiveDates.test_timezone_required) ... ok
+test_latest_available_revocation_never_resurrects_old_version (test_strict_regressions.StrictRegressions.test_latest_available_revocation_never_resurrects_old_version) ... ok
+test_strict_labels_and_training_use_cutoff_archive (test_strict_regressions.StrictRegressions.test_strict_labels_and_training_use_cutoff_archive) ... ok
 test_hand_baseline_and_unchanged_main (test_team_strength.ModelTests.test_hand_baseline_and_unchanged_main) ... ok
 test_joint_strength_direction_opponents_and_ridge (test_team_strength.ModelTests.test_joint_strength_direction_opponents_and_ridge) ... ok
 test_newton_known_solution (test_team_strength.ModelTests.test_newton_known_solution) ... ok
@@ -24,6 +26,6 @@ test_solver_cap_fallback_and_guardrail (test_team_strength.ModelTests.test_solve
 test_weight_and_effective_n (test_team_strength.ModelTests.test_weight_and_effective_n) ... ok
 
 ----------------------------------------------------------------------
-Ran 24 tests in 4.407s
+Ran 26 tests in 5.492s
 
 OK

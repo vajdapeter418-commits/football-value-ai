@@ -64,3 +64,28 @@ nem történt meg. A CLI eredmény-CSV replayt fogad, strict/extra archívumhoz
 programozott integráció kell. Hiperparaméter-keresés nincs bekapcsolva.
 
 Külön draft PR készül; automatikus merge/deploy és modellváltás nincs.
+
+
+## PR #4 strict javítások
+
+A javítás a `62ffdbc9c0c919674aad9cb355a1d8158e434c59` fejre épül.
+A snapshot az elérhetőségi időbélyegek alapján választja ki a legújabb verziót,
+és csak utána ellenőrzi a verifikációt, befejezést, játékidőt és meccsidőket.
+A visszateszt külön `historical_matches` archívumot követel strict módban.
+A végleges címkék kizárólag értékelésre szolgálnak. A strict extra-tanítás
+címkéit minden új cutoffnál az akkori archívumból választja ki; visszavont
+rekordból nem marad tanítópélda. A történeti feature-vektor megmarad a saját
+előrejelzési cutoffján rögzített állapotában.
+
+Regressziók: `python -m unittest discover -s tests -p test_strict_regressions.py -v`.
+Mindkét teszt sikeres; az eredeti kódon hibát jeleznek (visszaéledő régi rekord,
+illetve hiányzó archívumparaméter). A teljes csomag parancsa továbbra is
+`python -m unittest discover -s tests -v`: 26/26 sikeres.
+`python -m compileall -q .`: sikeres.
+
+Valódi adatos újrafuttatás megkísérelve, de nem végrehajtható:
+`curl --fail --show-error --max-time 20 https://www.football-data.co.uk/mmz4281/2526/E0.csv -o /workspace/E0-2526.csv`
+exit 7: `Failed to connect to proxy port 8080`. Helyi valódi adat/korabeli
+archívum nincs; nem közlünk kitalált mérési eredményt. A korábbi szintetikus
+metrikák korábbi futás eredményei. A baseline és minden modellparaméter változatlan,
+nincs teszteredményre hangolás, merge, deploy vagy modellaktiválás.

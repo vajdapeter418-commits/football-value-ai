@@ -172,3 +172,13 @@ Az Ipswich–Nottingham 1–1 felhasználó által jelzett top-1 találat, időb
 modellnapló nélkül nem hitelesített előrejelzés; nem hangoltunk rá.
 
 Az aktuális ellenőrzések és korlátok: [docs/VALIDATION.md](docs/VALIDATION.md).
+
+
+### Strict evaluator/archive separation
+
+`backtest(settled_labels, policy=STRICT, historical_matches=versioned_archive)`
+requires a separate historical archive. Settled labels only score predictions;
+the archive supplies cutoff-specific features and extra-model training labels.
+All versions of an ID may occur in the archive, while evaluator labels remain
+unique per ID. No strict archive is inferred from settled labels. The report
+records `input_hash` and `history_hash` separately.

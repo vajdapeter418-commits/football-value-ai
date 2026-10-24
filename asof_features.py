@@ -45,9 +45,12 @@ class Evidence:
                 or self.version < 1 or self.published_at > self.captured_at):
             raise ValueError('Invalid provenance')
 
+    def available(self, cutoff):
+        return max(self.effective_at, self.published_at, self.captured_at) < utc(cutoff)
+
     def known(self, cutoff):
-        return (self.verification in ('source_checked', 'verified')
-                and max(self.effective_at, self.published_at, self.captured_at) < utc(cutoff))
+        return (self.available(cutoff)
+                and self.verification in ('source_checked', 'verified'))
 
 
 @dataclass(frozen=True)
@@ -177,14 +180,16 @@ def snapshot(matches, request, extras=()):
         if request.policy == REPLAY:
             if m.match_date >= min(request.target_date, cutoff.date()):
                 continue
-        elif (m.evidence is None or not m.evidence.known(cutoff)
-              or m.completed_at is None or m.completed_at >= cutoff
-              or m.kickoff_utc is None or m.kickoff_utc >= cutoff):
+        elif m.evidence is None or not m.evidence.available(cutoff):
             continue
         # Select latest known version first: a corrected status can revoke completion.
         eligible.append(m)
     chosen = _latest(eligible, lambda m: m.match_id)
-    chosen = tuple(m for m in chosen if m.completed and m.regulation)
+    chosen = tuple(m for m in chosen if m.completed and m.regulation
+                   and (request.policy == REPLAY or
+                        (m.evidence.known(cutoff) and m.completed_at is not None
+                         and m.completed_at < cutoff and m.kickoff_utc is not None
+                         and m.kickoff_utc < cutoff)))
     # Detect alternate IDs for the same fixture too.
     fixtures = {}
     for m in chosen:
@@ -380,3 +385,4 @@ class Scaler:
             unknown.append(x is None)
             values.append(0.0 if x is None or sd == 0 else max(-3.0,min(3.0,(x-mu)/sd)))
         return tuple(values), tuple(unknown)
+

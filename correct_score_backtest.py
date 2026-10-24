@@ -95,9 +95,14 @@ def aggregate(rows, models):
     return out
 
 
-def backtest(matches, config=Config(mode='core'), extras=(), policy=REPLAY):
+def backtest(matches, config=Config(mode='core'), extras=(), policy=REPLAY,
+             historical_matches=None):
     started = perf_counter()
     matches = tuple(matches)
+    extras = tuple(extras)
+    if policy == STRICT and historical_matches is None:
+        raise ValueError('Strict evaluation requires separate historical_matches archive')
+    history = tuple(historical_matches) if historical_matches is not None else matches
     if len({(m.league,m.season) for m in matches}) > 1:
         raise ValueError('Evaluate one league/season at a time')
     # Input validation independent of chronology. Retrospective labels are a separate
@@ -117,6 +122,7 @@ def backtest(matches, config=Config(mode='core'), extras=(), policy=REPLAY):
         configs['core+'+block] = replace(config,mode='extras',blocks=(block,))
     configs['full'] = replace(config,mode='extras')
     examples = {k:[] for k in configs}
+    historical_examples = {k:[] for k in configs}
     skipped,fallbacks,coverage = Counter(),Counter(),Counter()
     rows = []
     # No fitted state is updated by a current day's labels before its forecasts.
@@ -133,7 +139,19 @@ def backtest(matches, config=Config(mode='core'), extras=(), policy=REPLAY):
                       datetime.combine(day,time.min,tzinfo=timezone.utc))
             req = Request(target.home_id,target.away_id,target.league,target.season,
                           day,cutoff,policy,target.kickoff_utc)
-            snap = snapshot(matches,req,extras)
+            snap = snapshot(history,req,extras)
+            if policy == STRICT:
+                known_results = {m.match_id:m for m in snap.matches}
+                for name in configs:
+                    examples[name] = []
+                    for match_id, example in historical_examples[name]:
+                        result = known_results.get(match_id)
+                        if result is not None:
+                            ev = result.evidence
+                            examples[name].append(replace(example,
+                                label=(result.home_goals,result.away_goals),
+                                label_known_at=max(ev.effective_at,ev.published_at,
+                                                   ev.captured_at,result.completed_at)))
             nh = sum(m.home_id==target.home_id for m in snap.matches)
             na = sum(m.away_id==target.away_id for m in snap.matches)
             if len(snap.matches)<60 or min(nh,na)<3:
@@ -162,23 +180,24 @@ def backtest(matches, config=Config(mode='core'), extras=(), policy=REPLAY):
                     except ValueError:
                         # Invalid provider contracts already trigger a visible prediction fallback.
                         continue
-                    known = (target.evidence.captured_at if policy==STRICT and target.evidence
-                             else datetime.combine(day+timedelta(days=1),time.min,tzinfo=timezone.utc))
-                    if policy == STRICT:
-                        if target.evidence is None or target.completed_at is None:
-                            continue
-                        known = max(known,target.evidence.published_at,target.completed_at)
-                    pending.append((name,TrainingExample(cutoff,known,f.core_lambdas,
+                    # Store only forecast-time features. Strict labels are resolved
+                    # from the archive anew at each subsequent prediction cutoff.
+                    known = datetime.combine(day+timedelta(days=1),time.min,tzinfo=timezone.utc)
+                    example = TrainingExample(cutoff,known,f.core_lambdas,
                         tuple(sorted(fh.items())),tuple(sorted(fa.items())),
-                        (target.home_goals,target.away_goals))))
+                        (0,0) if policy == STRICT else (target.home_goals,target.away_goals))
+                    pending.append((name,target.match_id,example))
             if len(forecasts)!=len(configs):
                 continue
             label = (target.home_goals,target.away_goals)
             rows.append({'match_id':target.match_id,'date':str(day),'split':membership[day],
                          'forecasts':{k:asdict(v) for k,v in forecasts.items()},
                          'label':label,'metrics':{k:metrics(v.candidate,label) for k,v in forecasts.items()}})
-        for name,example in pending:
-            examples[name].append(example)
+        for name,match_id,example in pending:
+            if policy == STRICT:
+                historical_examples[name].append((match_id,example))
+            else:
+                examples[name].append(example)
     summary = {k:aggregate([r for r in rows if r['split']==k],configs) for k in split}
     test = summary['test']
     candidate_name = 'full' if config.blocks else 'core'
@@ -190,7 +209,8 @@ def backtest(matches, config=Config(mode='core'), extras=(), policy=REPLAY):
     return {'policy':policy,
             'description':('Retrospektív eredmény-visszateszt; a statikus forrás utólagos javításait nem zárja ki.'
                            if policy==REPLAY else 'Strict as-of: archivált publikálási és rögzítési bizonyíték szükséges.'),
-            'input_hash':digest([asdict(m) for m in matches]),'extras_hash':digest([asdict(x) for x in extras]),
+            'input_hash':digest([asdict(m) for m in matches]),
+            'history_hash':digest([asdict(m) for m in history]),'extras_hash':digest([asdict(x) for x in extras]),
             'config':asdict(config),'config_hash':digest(asdict(config)),
             'split_dates':{k:([str(v[0]),str(v[-1])] if v else []) for k,v in split.items()},
             'summary':summary,'evaluated':len(rows),'skipped':dict(skipped),
@@ -219,3 +239,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
