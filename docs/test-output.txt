@@ -1,0 +1,29 @@
+test_budapest_utc_boundary_and_dst (test_asof_features.AsOfTests.test_budapest_utc_boundary_and_dst) ... ok
+test_current_day_and_future_exclusion_keeps_targets (test_asof_features.AsOfTests.test_current_day_and_future_exclusion_keeps_targets) ... ok
+test_duplicates_invalid_and_status (test_asof_features.AsOfTests.test_duplicates_invalid_and_status) ... ok
+test_neutral_missing_and_actual_extra_effect (test_asof_features.AsOfTests.test_neutral_missing_and_actual_extra_effect) ... ok
+test_player_missing_replacement_chance_minutes_and_late_lineup (test_asof_features.AsOfTests.test_player_missing_replacement_chance_minutes_and_late_lineup) ... ok
+test_scaler_unknown_clipping_and_past_only (test_asof_features.AsOfTests.test_scaler_unknown_clipping_and_past_only) ... ok
+test_strict_publication_capture_equality_late_import_and_versions (test_asof_features.AsOfTests.test_strict_publication_capture_equality_late_import_and_versions) ... ok
+test_xg_smoothing_definitions_provider_and_future_stats (test_asof_features.AsOfTests.test_xg_smoothing_definitions_provider_and_future_stats) ... ok
+test_own_day_forecasts_compared_without_dropping_the_day (test_correct_score_backtest.BacktestTests.test_own_day_forecasts_compared_without_dropping_the_day) ... ok
+test_paired_denominators_metrics_and_splits (test_correct_score_backtest.BacktestTests.test_paired_denominators_metrics_and_splits) ... ok
+test_permutation_and_future_add_remove (test_correct_score_backtest.BacktestTests.test_permutation_and_future_add_remove) ... ok
+test_ui_and_backtest_share_entrypoint_and_snapshot (test_correct_score_backtest.BacktestTests.test_ui_and_backtest_share_entrypoint_and_snapshot) ... ok
+test_wilson_bootstrap_and_stable_logpmf (test_correct_score_backtest.BacktestTests.test_wilson_bootstrap_and_stable_logpmf) ... ok
+test_existing_match_dates_are_preserved (test_detective_dates.DetectiveDates.test_existing_match_dates_are_preserved) ... ok
+test_filter_uses_event_utc_date (test_detective_dates.DetectiveDates.test_filter_uses_event_utc_date) ... ok
+test_new_investigation_defaults_to_current_utc_day (test_detective_dates.DetectiveDates.test_new_investigation_defaults_to_current_utc_day) ... ok
+test_offset_crosses_utc_day_boundary (test_detective_dates.DetectiveDates.test_offset_crosses_utc_day_boundary) ... ok
+test_timezone_required (test_detective_dates.DetectiveDates.test_timezone_required) ... ok
+test_hand_baseline_and_unchanged_main (test_team_strength.ModelTests.test_hand_baseline_and_unchanged_main) ... ok
+test_joint_strength_direction_opponents_and_ridge (test_team_strength.ModelTests.test_joint_strength_direction_opponents_and_ridge) ... ok
+test_newton_known_solution (test_team_strength.ModelTests.test_newton_known_solution) ... ok
+test_probability_contract (test_team_strength.ModelTests.test_probability_contract) ... ok
+test_solver_cap_fallback_and_guardrail (test_team_strength.ModelTests.test_solver_cap_fallback_and_guardrail) ... ok
+test_weight_and_effective_n (test_team_strength.ModelTests.test_weight_and_effective_n) ... ok
+
+----------------------------------------------------------------------
+Ran 24 tests in 4.407s
+
+OK
