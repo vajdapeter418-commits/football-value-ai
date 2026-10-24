@@ -39,7 +39,7 @@ Alapértelmezett fájl: `data/prematch_archive.sqlite3`; külön a nyomozó adat
 python prematch_archive.py --db /persistent/prematch.sqlite3 fpl --season 2026/27
 ```
 
-Az API-FOOTBALL kulcsa kizárólag a szerver `API_FOOTBALL_KEY` környezeti változójába kerüljön, ne chatbe, kódba, URL-be vagy parancssori argumentumba. A kulcs nélküli parancs hálózati hívás nélkül leáll. Beállított kulccsal egy GET-kérés ellenőrzi és archiválja a liga/idény lefedettségét:
+Az API-FOOTBALL kulcsa a szerver `API_FOOTBALL_KEY` környezeti változójába vagy a Streamlit azonos nevű Secrets bejegyzésébe kerüljön, ne chatbe, kódba, URL-be vagy parancssori argumentumba. A CLI a környezeti változót használja; a felület közvetlenül olvassa a Secrets bejegyzést. A kulcs nélküli parancs hálózati hívás nélkül leáll. Beállított kulccsal egy GET-kérés ellenőrzi és archiválja a liga/idény lefedettségét:
 
 ```sh
 python prematch_archive.py coverage --league 39 --season 2026
@@ -47,7 +47,17 @@ python prematch_archive.py coverage --league 39 --season 2026
 
 Az adapter elutasítja a szolgáltatói `errors` választ (HTTP 200 mellett is), a hiányzó liga/idényt és a hiányos lapozott választ. Az `injuries=true` nem garantál minden meccshez teljes listát és nem igazolja az xG meglétét. Ez a parancs még nem tölti le a sérüléseket vagy az xG-t.
 
-Nincs beállított cron/háttérgyűjtés vagy Streamlit-gomb. A lokális SQLite tartós szerveren tartós köteten fusson; egy kézi pillanatkép önmagában nem folyamatos archívum. A `data/` könyvtár már gitignore-olt: valódi válaszok nem kerülnek a GitHubra.
+Nincs beállított cron/háttérgyűjtés. A lokális SQLite tartós szerveren tartós köteten fusson; egy kézi pillanatkép önmagában nem folyamatos archívum. A `data/` könyvtár már gitignore-olt: valódi válaszok nem kerülnek a GitHubra.
+
+### Streamlit kapcsolati próba
+
+Az oldalsáv új eleme: **API-kapcsolat ellenőrzése**. Ez külön oldal, nem hívja meg a mérkőzéskeresőt vagy az FPL adatletöltését. A meglévő `API_FOOTBALL_KEY` Secrets bejegyzést olvassa, környezeti változós fallbackkel. Nem kér kulcsbevitelt, és nem jelenít meg kulcsrészletet, nyers választ vagy kivételszöveget.
+
+A Premier League rögzített ligaazonosítója 39, az idény kezdőéve választható. Egy gombnyomás egy lefedettségi kérést indíthat. Az eredmény egy óráig közös cache-ből használható, kulcsváltásnál új fingerprinttel; a kulcs nem része a cache-kulcsnak vagy a kimenetnek. A SQLite-ban tranzakcióval fenntartott keret legfeljebb öt új próbát enged UTC-naponként, közösen a felhasználók között, legalább 60 másodperc eltéréssel. A sikertelen próbák is beleszámítanak. A helyi fájl törlése vagy elvesztése a keretet is elveszíti; Community Cloudon ez nem szolgáltatóoldali kvótavédelem.
+
+Csak előre felsorolt igaz/hamis/ismeretlen lefedettségi mezők jelennek meg: sérülések/hiányzók, kezdők, meccs- és játékosstatisztikák, továbbá a kiválasztott idény és ellenőrzési idő. A statisztikajelző nem xG-igazolás. A sikeres üzenet csak az adott liga/idény lekérésének sikerét állítja. A felület nem indít ismétlést újrarajzoláskor; az eredmény új gombnyomással tekinthető meg.
+
+A tesztfelület még draft kód. A felhasználó meglévő Streamlit alkalmazásában csak külön jóváhagyott élesítés után jelenik meg; a PR-frissítés nem bizonyít telepítést.
 
 ## Időbeli és szemantikai szerződés
 
@@ -62,8 +72,8 @@ Nincs beállított cron/háttérgyűjtés vagy Streamlit-gomb. A lokális SQLite
 
 ## Ellenőrzés és nyitott pontok
 
-Nyolc új offline teszt: cutoff egyenlőség/jövő/késői import; ismeretlen publikálási idő és nyers játékosesély megőrzése; részleges capture elutasítása; atomi rollback és korrupció; idény/ID-kontraktus; kulcs nélküli nulla kérés; API-hibák/lapozás/lefedettség; idegen endpointok tiltása. A teljes csomag 34 tesztből áll. Az aktuális saját futás eredménye a PR leírásában szerepel.
+Az archiváló nyolc offline tesztje mellett hat új kapcsolati/UI egységteszt ellenőrzi a Secrets-kulcs elsőbbségét, a kulcs nélküli nulla kérést, a kivétel/hibás payload kiszűrését, a boolean kimenetet, a közös napi keretet és a kattintási határt. Egy további valódi Streamlit AppTest helyettesített providerrel ellenőrzi az első megjelenítést, a gombot, az ismételt kattintás cache-ét és a kulcs elrejtését. Ez Streamlit nélkül kihagyható; a saját validációban telepített Streamlittel fut. A teljes csomag 41 tesztből áll. Az aktuális saját futás eredménye a PR leírásában szerepel.
 
-Élő FPL CLI-próba sikerült: első bundle, 20 csapat / 668 játékos / 380 fixture, model_eligible=false. Az API-FOOTBALL élő ellenőrzése kulcs hiányában nem történt meg. A felületi megjelenítés, az ütemezett tartós gyűjtés, a fixture-enkénti xG-kinyerés és a tanult sérüléskorrekció további feladat; ezeket ez a változás nem állítja késznek.
+Élő FPL CLI-próba sikerült: első bundle, 20 csapat / 668 játékos / 380 fixture, model_eligible=false. A kapcsolati próbához készült felületet helyettesített szolgáltatói válasszal teszteljük; a valódi felhasználói kulccsal élő próbát innen nem végeztünk. Az ütemezett tartós gyűjtés, a fixture-enkénti xG-kinyerés és a tanult sérüléskorrekció további feladat.
 
 A PR #4-re épülő külön draft PR, bázisa a `feature/exact-score-team-strength` ág. A PR #4 jóváhagyását/összeolvasztását nem helyettesíti. Sem a baseline, sem a korábban megmért core paraméterei nem változnak.
