@@ -57,3 +57,15 @@ Referenciák:
 
 A korábbi általános „nem érhető el” üzenet helyett fix, titokérték nélküli állapot jelenik meg: olvashatatlan Secrets (hiányzó fájl vagy TOML-hiba), üres beállítás, hiányzó legfelső szintű bejegyzés, szakasz alá került bejegyzés, illetve üres/nem szöveges érték. A beágyazott kulcs keresése legfeljebb nyolc szintű; ilyen kulcsot a program nem használ automatikusan. Az elsőbbség továbbra is legfelső szintű Secrets, majd környezeti változó. Más kulcsnevek, szakasznevek, értékek és kivételszövegek nem jelennek meg. Ez nem API-hitelesítés és nem fogyaszt szolgáltatói kvótát.
 
+# Konkrét mérkőzéspróba
+
+Az API-kapcsolat menü alján külön gomb indítja a 2024-08-16-i Manchester United–Fulham mérkőzés ellenőrzését. Egy szigorúan rögzített `/fixtures?league=39&season=2024&date=2024-08-16` hívás után ellenőrzi a liga, idény, UTC-nap, hazai/vendég csapatazonosítók és FT státusz egyezését. Csak az így kapott pozitív fixture ID használható a három további végponthoz: `/fixtures/statistics`, `/fixtures/lineups`, `/injuries`.
+
+A próba legfeljebb 4 GET, nincs átirányítás vagy újrapróbálkozás. A meglévő legfeljebb napi 5 kapcsolati hívás mellett külön naponta egy, legfeljebb 4 hívásos közös kerete van. SQLite tranzakció foglalja le az UTC-napot hálózati kérés előtt; sikertelen és megszakadt próba is fogyasztja a keretet. Az azonos kulccsal történő ismételt kattintás a biztonságos összesítést olvassa a SQLite-ból, nem újabb szolgáltatói kérés. Helyi adatbázisvesztés visszaállítja e korlátot is.
+
+A felület csak fix szöveget, darabszámokat és ellenőrzött, nemnegatív, véges xG-számokat mutat. A hiányzó vagy nem numerikus xG nem nulla; a valódi nulla megmarad. Csapat- és játékosazonosítók ellenőrzése megakadályozza a rossz párosítás elfogadását. A hiányzók üres válasza nem jelent hiányzómentességet. A sikeres fixture-azonosítás nem jelenti minden részlekérés sikerét; azok külön állapotot kapnak.
+
+Az archívum `api_football_sample` névtérbe ment, aktuális fetched/stored/available időponttal, ismeretlen publikálási idővel, `model_eligible=False` jelöléssel. Ezek mai megfigyelések egy lezárt meccsről, nem bizonyítékok a kezdés előtt elérhető információra. A modell és a visszateszt nem olvassa őket.
+
+Dokumentáció: https://www.api-football.com/documentation_v3
+

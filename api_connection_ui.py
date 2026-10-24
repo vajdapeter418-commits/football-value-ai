@@ -146,4 +146,6 @@ def run():
     st.caption('A lefedettségi jelző nem garantál teljes adatot minden meccshez. '
                'A statisztikák elérhetősége önmagában nem igazolja az xG meglétét. '
                'Ez a próba nem módosítja a modell becsléseit.')
+    from match_sample_probe import render
+    render(st,key,os.environ.get('PREMATCH_ARCHIVE_DB','data/prematch_archive.sqlite3'))
 

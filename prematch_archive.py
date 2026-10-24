@@ -41,7 +41,9 @@ class Observation:
 
 
 def fetch(endpoint, *, api_key=None):
-    allowed = (endpoint in (FPL+'bootstrap-static/', FPL+'fixtures/') or
+    allowed = (endpoint in (FPL+'bootstrap-static/', FPL+'fixtures/',
+                           API_FOOTBALL+'fixtures?league=39&season=2024&date=2024-08-16') or
+               re.fullmatch(re.escape(API_FOOTBALL)+r'(?:fixtures/statistics|fixtures/lineups|injuries)\?fixture=[1-9][0-9]{0,11}',endpoint) is not None or
                endpoint.startswith(API_FOOTBALL+'leagues?'))
     if not allowed:
         raise ValueError('Unapproved provider endpoint')
