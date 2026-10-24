@@ -10,6 +10,20 @@ from unittest.mock import patch
 
 @unittest.skipUnless(importlib.util.find_spec('streamlit'),'Streamlit runtime not installed')
 class StreamlitConnectionTests(unittest.TestCase):
+    def test_actual_nested_secrets_are_diagnosed_without_request_or_disclosure(self):
+        from streamlit.testing.v1 import AppTest
+        import api_connection_ui as ui
+        with patch.dict(os.environ,{},clear=True),patch.object(ui,'capture_coverage') as provider:
+            app=AppTest.from_string('from api_connection_ui import run\nrun()')
+            app.secrets['private-section']={'API_FOOTBALL_KEY':'private-fixture-key'}
+            app.run()
+            self.assertFalse(app.exception);provider.assert_not_called()
+            self.assertTrue(app.button[0].disabled)
+            rendered=' '.join(str(x.value) for group in [app.info,app.caption] for x in group)
+            self.assertIn(ui.CONFIG_MESSAGES['nested'],rendered)
+            self.assertNotIn('private-section',rendered)
+            self.assertNotIn('private-fixture-key',rendered)
+
     def test_main_entrypoint_routes_to_probe_without_other_downloads(self):
         from streamlit.testing.v1 import AppTest
         import api_connection_ui as ui
@@ -59,3 +73,4 @@ class StreamlitConnectionTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
