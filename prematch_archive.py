@@ -187,10 +187,10 @@ def capture_fpl(archive,season):
     return {'bundle_id':bundle,'provider':'fpl','season':season,**counts,'model_eligible':False}
 
 
-def capture_coverage(archive,league,year):
+def capture_coverage(archive,league,year,*,api_key=None):
     if league<1 or year<2000:
         raise ValueError('Invalid league or season')
-    key=os.environ.get('API_FOOTBALL_KEY')
+    key=api_key if api_key is not None else os.environ.get('API_FOOTBALL_KEY')
     if not key:
         raise ValueError('API_FOOTBALL_KEY is not configured')
     endpoint=API_FOOTBALL+'leagues?'+urlencode({'id':league,'season':year})
