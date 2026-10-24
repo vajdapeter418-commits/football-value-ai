@@ -10,6 +10,35 @@ from prematch_archive import Archive,Observation,API_FOOTBALL,fetch
 
 
 class SampleTests(unittest.TestCase):
+    def test_safe_provider_failure_classification(self):
+        for text,code in [('Free plans cannot access this season','plan'),('Invalid token','auth'),
+                          ('Rate limit exceeded','quota'),('Invalid parameter date','request'),
+                          ('private-secret-value','provider')]:
+            self.assertEqual(sample.provider_failure({'errors':{'message':text}}),code)
+
+    def test_diagnosis_requires_initial_failure_and_reuses_single_get(self):
+        with patch.object(sample,'fetch') as network:
+            self.assertEqual(sample.diagnose_fixture(self.secret,self.path)['code'],'local')
+            network.assert_not_called()
+        with patch.object(sample,'fetch',side_effect=ValueError('private')):
+            sample.probe(self.secret,self.path)
+        obs=self.observations()[0]
+        data=json.loads(obs.body);data['errors']={'plan':'Free plan: private-secret-value'}
+        bad=Observation(obs.endpoint,json.dumps(data).encode(),obs.fetched_at)
+        with patch.object(sample,'fetch',return_value=bad) as network:
+            result=sample.diagnose_fixture(self.secret,self.path)
+            self.assertEqual(result['code'],'plan')
+            self.assertEqual(sample.diagnose_fixture(self.secret,self.path),result)
+            self.assertEqual(network.call_count,1)
+        self.assertNotIn('private-secret-value',json.dumps(result))
+        self.assertEqual(sample.diagnose_fixture('other-key',self.path)['code'],'unavailable')
+
+    def test_successful_audit_cannot_trigger_diagnosis(self):
+        with patch.object(sample,'fetch',side_effect=self.observations()) as network:
+            sample.probe(self.secret,self.path)
+            self.assertEqual(sample.diagnose_fixture(self.secret,self.path)['code'],'unavailable')
+            self.assertEqual(network.call_count,4)
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         self.path=Path(self.tmp.name)/'sample.sqlite3'
