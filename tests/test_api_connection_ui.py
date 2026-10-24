@@ -35,6 +35,35 @@ with patch.dict(sys.modules,{'streamlit':fake}):
 
 
 class ConnectionTests(unittest.TestCase):
+    def test_configuration_states_and_nested_values_never_reach_ui(self):
+        cases=[({},'empty_store'),({'other-private-name':'private-value'},'missing'),
+               ({'API_FOOTBALL_KEY':''},'invalid'),({'API_FOOTBALL_KEY':123},'invalid'),
+               ({'private-section':{'inner':{'API_FOOTBALL_KEY':'private-value'}}},'nested')]
+        with patch.dict('os.environ',{},clear=True):
+            for secrets,expected in cases:
+                with self.subTest(status=expected):
+                    self.assertEqual(ui.key_configuration(secrets),(None,expected))
+                    fake.secrets=secrets;fake.clicked=True;fake.output=[]
+                    with patch.object(ui,'cached_diagnostic') as fetch:
+                        ui.run();fetch.assert_not_called()
+                    rendered=str(fake.output)
+                    self.assertIn(ui.CONFIG_MESSAGES[expected],rendered)
+                    for private in ['private-section','private-value','other-private-name']:
+                        self.assertNotIn(private,rendered)
+
+    def test_unreadable_secrets_exception_redaction_and_environment_fallback(self):
+        class Broken:
+            def __contains__(self,name):raise ValueError('private-secret-in-parse-error')
+        with patch.dict('os.environ',{},clear=True):
+            self.assertEqual(ui.key_configuration(Broken()),(None,'unreadable'))
+            fake.secrets=Broken();fake.output=[]
+            ui.run()
+            self.assertIn(ui.CONFIG_MESSAGES['unreadable'],str(fake.output))
+            self.assertNotIn('private-secret-in-parse-error',str(fake.output))
+        with patch.dict('os.environ',{'API_FOOTBALL_KEY':' fallback '},clear=True):
+            self.assertEqual(ui.key_configuration(Broken()),('fallback','ready'))
+            self.assertEqual(ui.key_configuration({'API_FOOTBALL_KEY':' root '}),('root','ready'))
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         self.path=Path(self.tmp.name)/'archive.sqlite3'
@@ -96,3 +125,4 @@ class ConnectionTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
