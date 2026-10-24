@@ -1,5 +1,6 @@
 """Click-only API-FOOTBALL diagnostic. No credentials or raw responses reach the UI."""
 from datetime import datetime, timedelta, timezone
+from collections.abc import Mapping
 import hashlib
 import os
 import streamlit as st
@@ -11,16 +12,50 @@ class CheckLimit(Exception):
     pass
 
 
-def configured_key(secrets):
-    """Prefer app Secrets, with an environment fallback for local deployments."""
+CONFIG_MESSAGES = {
+    'ready': 'Kulcs beállítva. Az érvényességét csak a kapcsolati próba ellenőrzi.',
+    'unreadable': 'A Secrets beállítás nem olvasható. Hiányzó fájl vagy hibás TOML-formátum is okozhatja. Ellenőrizd a Manage app → Settings → Secrets mentését; a kulcsot ne küldd el.',
+    'empty_store': 'Az alkalmazás üres Secrets beállítást lát. Ellenőrizd, hogy ennek az alkalmazásnak a Settings → Secrets mezőjébe mentettél-e.',
+    'missing': 'A Secrets olvasható, de a legfelső szinten nincs API_FOOTBALL_KEY bejegyzés. Ellenőrizd a pontos nevet és a mentést ebben az alkalmazásban.',
+    'nested': 'Az API_FOOTBALL_KEY egy [szakasz] alatt található. Helyezd a teljes bejegyzést minden [szakasz] elé, majd Save. A többi beállítást hagyd meg.',
+    'invalid': 'Az API_FOOTBALL_KEY bejegyzés megvan, de nem nemüres szöveg. Az érték idézőjelek között szerepeljen, majd Save. A kulcsot ne küldd el.',
+}
+
+
+def key_configuration(secrets):
+    """Return a credential privately, plus a fixed, value-free diagnostic code.
+
+    Nested credentials are detected but never selected implicitly. Neither section
+    names, secret names other than our fixed key, values nor exceptions are output.
+    """
+    name='API_FOOTBALL_KEY'
     try:
-        value=secrets.get('API_FOOTBALL_KEY')
+        if name in secrets:
+            value=secrets[name]
+            if isinstance(value,str) and value.strip():
+                return value.strip(),'ready'
+            status='invalid'
+        else:
+            def contains_nested_key(mapping,depth=0):
+                if depth>=8:
+                    return False
+                for value in mapping.values():
+                    if isinstance(value,Mapping):
+                        if name in value or contains_nested_key(value,depth+1):
+                            return True
+                return False
+            status='nested' if contains_nested_key(secrets) else 'missing' if len(secrets) else 'empty_store'
     except Exception:
-        # Missing/malformed local Secrets must not render its exception contents.
-        value=None
-    if not isinstance(value,str) or not value.strip():
-        value=os.environ.get('API_FOOTBALL_KEY')
-    return value.strip() if isinstance(value,str) and value.strip() else None
+        status='unreadable'
+    value=os.environ.get(name)
+    if isinstance(value,str) and value.strip():
+        return value.strip(),'ready'
+    return None,status
+
+
+def configured_key(secrets):
+    """Compatibility wrapper retaining root Secrets / environment precedence."""
+    return key_configuration(secrets)[0]
 
 
 def reserve_attempt(db,at):
@@ -88,8 +123,9 @@ def cached_diagnostic(season,db_path,key_fingerprint,_api_key):
 def run():
     st.header('API-FOOTBALL kapcsolati próba')
     st.write('Ellenőrizd, milyen adatok érhetők el a Premier League-hez az előfizetésedben.')
-    key=configured_key(st.secrets)
-    st.info('Kulcs beállítva.' if key else 'Az API_FOOTBALL_KEY nem érhető el ebben az alkalmazásban.')
+    key,status=key_configuration(st.secrets)
+    st.info(CONFIG_MESSAGES[status])
+    st.caption('Beállításellenőrző: 2. verzió. Nem jelenít meg kulcsot vagy kulcsrészletet.')
     year=datetime.now(timezone.utc).year
     season=st.selectbox('Idény kezdőéve',list(range(year,year-5,-1)),
                         format_func=lambda value:f'{value}/{str(value+1)[-2:]}',key='api_check_season')
@@ -110,3 +146,4 @@ def run():
     st.caption('A lefedettségi jelző nem garantál teljes adatot minden meccshez. '
                'A statisztikák elérhetősége önmagában nem igazolja az xG meglétét. '
                'Ez a próba nem módosítja a modell becsléseit.')
+
