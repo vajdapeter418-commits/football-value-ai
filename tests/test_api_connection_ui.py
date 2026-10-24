@@ -21,9 +21,9 @@ class FakeUI(types.ModuleType):
         self.output=[]
         self.cache_data=lambda **kwargs:lambda fn:fn
     def header(self,*x,**k):self.output.extend(x)
-    write=info=caption=success=warning=table=header
+    write=info=caption=success=warning=table=subheader=header
     def selectbox(self,label,values,**kwargs):return values[0]
-    def button(self,label,disabled=False,**kwargs):return self.clicked and not disabled
+    def button(self,label,disabled=False,**kwargs):return self.clicked and not disabled and kwargs.get('key')=='api_check_button'
     def spinner(self,*args,**kwargs):return nullcontext()
 
 
