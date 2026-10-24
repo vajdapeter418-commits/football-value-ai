@@ -1,0 +1,396 @@
+{
+  "protocol": "TEMPERATURE_EXPERIMENT_PLAN.md",
+  "input_sha256": "9a565df75e791b90ea6356cec1a15507de546554176dca402fb882748a03f486",
+  "status": "Exploratory on previously seen historical_results_replay data; no activation.",
+  "per_season": [
+    {
+      "season": "2020/21",
+      "fit": {
+        "temperature": 1.0791353139898394,
+        "training_matches": 181,
+        "trained_through": "2021-02-21",
+        "training_hash": "5995d3bb2255726cccd9181f6ee28b6b40a34cea76f53076c43788ccdce72719",
+        "reason": "development_nll_fit",
+        "selection_through": null,
+        "version": "score-temperature-v1"
+      },
+      "selected": {
+        "temperature": 1.0791353139898394,
+        "training_matches": 181,
+        "trained_through": "2021-02-21",
+        "training_hash": "5995d3bb2255726cccd9181f6ee28b6b40a34cea76f53076c43788ccdce72719",
+        "reason": "validation_accepted",
+        "selection_through": "2021-04-16",
+        "version": "score-temperature-v1"
+      },
+      "validation": {
+        "baseline": {
+          "n": 65,
+          "nll": 2.982614102791358,
+          "brier": 0.6106375875828787,
+          "top1": 0.06153846153846154,
+          "top5": 0.4,
+          "estimated_top1": 0.12816157918866303,
+          "estimated_top5": 0.5099534613032267
+        },
+        "candidate": {
+          "n": 65,
+          "nll": 2.9770515581296717,
+          "brier": 0.6103488284125239,
+          "top1": 0.06153846153846154,
+          "top5": 0.4,
+          "estimated_top1": 0.12052601253482344,
+          "estimated_top5": 0.48714002380642824
+        }
+      },
+      "test": {
+        "baseline": {
+          "n": 69,
+          "nll": 2.856036002032969,
+          "brier": 0.5535088685845003,
+          "top1": 0.15942028985507245,
+          "top5": 0.4927536231884058,
+          "estimated_top1": 0.12478759753822899,
+          "estimated_top5": 0.505368450255316
+        },
+        "candidate": {
+          "n": 69,
+          "nll": 2.8607862682681957,
+          "brier": 0.5530209537603691,
+          "top1": 0.15942028985507245,
+          "top5": 0.4927536231884058,
+          "estimated_top1": 0.1174406575335962,
+          "estimated_top5": 0.4825346843028526
+        },
+        "selected": {
+          "n": 69,
+          "nll": 2.8607862682681957,
+          "brier": 0.5530209537603691,
+          "top1": 0.15942028985507245,
+          "top5": 0.4927536231884058,
+          "estimated_top1": 0.1174406575335962,
+          "estimated_top5": 0.4825346843028526
+        }
+      }
+    },
+    {
+      "season": "2021/22",
+      "fit": {
+        "temperature": 1.1213587382185704,
+        "training_matches": 173,
+        "trained_through": "2022-02-13",
+        "training_hash": "b768c41e0a163cae20829a82de4437b2f74f652c120ad18a49612fda57a22177",
+        "reason": "development_nll_fit",
+        "selection_through": null,
+        "version": "score-temperature-v1"
+      },
+      "selected": {
+        "temperature": 1.1213587382185704,
+        "training_matches": 173,
+        "trained_through": "2022-02-13",
+        "training_hash": "b768c41e0a163cae20829a82de4437b2f74f652c120ad18a49612fda57a22177",
+        "reason": "validation_accepted",
+        "selection_through": "2022-04-06",
+        "version": "score-temperature-v1"
+      },
+      "validation": {
+        "baseline": {
+          "n": 66,
+          "nll": 2.9923355909892235,
+          "brier": 0.5272633691610525,
+          "top1": 0.06060606060606061,
+          "top5": 0.42424242424242425,
+          "estimated_top1": 0.1288008802504772,
+          "estimated_top5": 0.5161584107441746
+        },
+        "candidate": {
+          "n": 66,
+          "nll": 2.9842305238131193,
+          "brier": 0.525037413693577,
+          "top1": 0.06060606060606061,
+          "top5": 0.42424242424242425,
+          "estimated_top1": 0.11747866359923649,
+          "estimated_top5": 0.48139843360835033
+        }
+      },
+      "test": {
+        "baseline": {
+          "n": 81,
+          "nll": 2.999037717961848,
+          "brier": 0.5532116086572504,
+          "top1": 0.09876543209876543,
+          "top5": 0.43209876543209874,
+          "estimated_top1": 0.12270280332272655,
+          "estimated_top5": 0.49489494371082166
+        },
+        "candidate": {
+          "n": 81,
+          "nll": 2.9963878387099787,
+          "brier": 0.5535770591198249,
+          "top1": 0.09876543209876543,
+          "top5": 0.43209876543209874,
+          "estimated_top1": 0.1117852416165112,
+          "estimated_top5": 0.46078666330034085
+        },
+        "selected": {
+          "n": 81,
+          "nll": 2.9963878387099787,
+          "brier": 0.5535770591198249,
+          "top1": 0.09876543209876543,
+          "top5": 0.43209876543209874,
+          "estimated_top1": 0.1117852416165112,
+          "estimated_top5": 0.46078666330034085
+        }
+      }
+    },
+    {
+      "season": "2022/23",
+      "fit": {
+        "temperature": 1.0353322128153883,
+        "training_matches": 172,
+        "trained_through": "2023-02-24",
+        "training_hash": "403544896f5169f09c9e58865fed9eaf34c946696bfc3e23bb12c836b1ef2cbc",
+        "reason": "development_nll_fit",
+        "selection_through": null,
+        "version": "score-temperature-v1"
+      },
+      "selected": {
+        "temperature": 1.0353322128153883,
+        "training_matches": 172,
+        "trained_through": "2023-02-24",
+        "training_hash": "403544896f5169f09c9e58865fed9eaf34c946696bfc3e23bb12c836b1ef2cbc",
+        "reason": "validation_accepted",
+        "selection_through": "2023-04-21",
+        "version": "score-temperature-v1"
+      },
+      "validation": {
+        "baseline": {
+          "n": 75,
+          "nll": 3.0720692296014978,
+          "brier": 0.560730958825562,
+          "top1": 0.12,
+          "top5": 0.4666666666666667,
+          "estimated_top1": 0.12921440388359437,
+          "estimated_top5": 0.514267434734269
+        },
+        "candidate": {
+          "n": 75,
+          "nll": 3.065724151449287,
+          "brier": 0.5604728211455473,
+          "top1": 0.12,
+          "top5": 0.4666666666666667,
+          "estimated_top1": 0.12564845449240689,
+          "estimated_top5": 0.5037029227404892
+        }
+      },
+      "test": {
+        "baseline": {
+          "n": 73,
+          "nll": 3.241510054245102,
+          "brier": 0.5384259970486303,
+          "top1": 0.0547945205479452,
+          "top5": 0.4931506849315068,
+          "estimated_top1": 0.12468487811435268,
+          "estimated_top5": 0.4995309696560108
+        },
+        "candidate": {
+          "n": 73,
+          "nll": 3.230899960545073,
+          "brier": 0.5385770496531125,
+          "top1": 0.0547945205479452,
+          "top5": 0.4931506849315068,
+          "estimated_top1": 0.12122941227707626,
+          "estimated_top5": 0.48909336432215295
+        },
+        "selected": {
+          "n": 73,
+          "nll": 3.230899960545073,
+          "brier": 0.5385770496531125,
+          "top1": 0.0547945205479452,
+          "top5": 0.4931506849315068,
+          "estimated_top1": 0.12122941227707626,
+          "estimated_top5": 0.48909336432215295
+        }
+      }
+    },
+    {
+      "season": "2023/24",
+      "fit": {
+        "temperature": 1.1844842398607913,
+        "training_matches": 158,
+        "trained_through": "2024-02-05",
+        "training_hash": "fc6a2faba83fa6f6789d9e62a30cae56c5fdd91aa10446f2beebd46305642c74",
+        "reason": "development_nll_fit",
+        "selection_through": null,
+        "version": "score-temperature-v1"
+      },
+      "selected": {
+        "temperature": 1.0,
+        "training_matches": 158,
+        "trained_through": "2024-02-05",
+        "training_hash": "fc6a2faba83fa6f6789d9e62a30cae56c5fdd91aa10446f2beebd46305642c74",
+        "reason": "validation_rejected_identity",
+        "selection_through": "2024-04-03",
+        "version": "score-temperature-v1"
+      },
+      "validation": {
+        "baseline": {
+          "n": 73,
+          "nll": 3.0044593041976553,
+          "brier": 0.5610704522950832,
+          "top1": 0.1643835616438356,
+          "top5": 0.4794520547945205,
+          "estimated_top1": 0.10349458976673359,
+          "estimated_top5": 0.429009274002775
+        },
+        "candidate": {
+          "n": 73,
+          "nll": 3.030999105115791,
+          "brier": 0.5670646785736593,
+          "top1": 0.1643835616438356,
+          "top5": 0.4794520547945205,
+          "estimated_top1": 0.08998611827190355,
+          "estimated_top5": 0.38349162805001785
+        }
+      },
+      "test": {
+        "baseline": {
+          "n": 79,
+          "nll": 3.206690537281326,
+          "brier": 0.5323982784304249,
+          "top1": 0.10126582278481013,
+          "top5": 0.4177215189873418,
+          "estimated_top1": 0.10381897375898562,
+          "estimated_top5": 0.42655268076232095
+        },
+        "candidate": {
+          "n": 79,
+          "nll": 3.203488311262937,
+          "brier": 0.5342063340708652,
+          "top1": 0.10126582278481013,
+          "top5": 0.4177215189873418,
+          "estimated_top1": 0.09009459931986935,
+          "estimated_top5": 0.38108259002432776
+        },
+        "selected": {
+          "n": 79,
+          "nll": 3.206690537281326,
+          "brier": 0.5323982784304249,
+          "top1": 0.10126582278481013,
+          "top5": 0.4177215189873418,
+          "estimated_top1": 0.10381897375898562,
+          "estimated_top5": 0.42655268076232095
+        }
+      }
+    },
+    {
+      "season": "2024/25",
+      "fit": {
+        "temperature": 1.1670092093681999,
+        "training_matches": 180,
+        "trained_through": "2025-02-12",
+        "training_hash": "2785ef8dacec77a6b5259a5b300da86f38bd45c078de3596029ca8c261bcccb5",
+        "reason": "development_nll_fit",
+        "selection_through": null,
+        "version": "score-temperature-v1"
+      },
+      "selected": {
+        "temperature": 1.0,
+        "training_matches": 180,
+        "trained_through": "2025-02-12",
+        "training_hash": "2785ef8dacec77a6b5259a5b300da86f38bd45c078de3596029ca8c261bcccb5",
+        "reason": "validation_rejected_identity",
+        "selection_through": "2025-04-12",
+        "version": "score-temperature-v1"
+      },
+      "validation": {
+        "baseline": {
+          "n": 74,
+          "nll": 2.8808629660615237,
+          "brier": 0.5945826804164253,
+          "top1": 0.10810810810810811,
+          "top5": 0.5540540540540541,
+          "estimated_top1": 0.11265646190776328,
+          "estimated_top5": 0.4601372293182065
+        },
+        "candidate": {
+          "n": 74,
+          "nll": 2.910039896276467,
+          "brier": 0.5949691697023147,
+          "top1": 0.10810810810810811,
+          "top5": 0.5540540540540541,
+          "estimated_top1": 0.09928510094173143,
+          "estimated_top5": 0.4167161947439579
+        }
+      },
+      "test": {
+        "baseline": {
+          "n": 66,
+          "nll": 2.9587682799495685,
+          "brier": 0.5896496478538346,
+          "top1": 0.12121212121212122,
+          "top5": 0.4393939393939394,
+          "estimated_top1": 0.11574431670102375,
+          "estimated_top5": 0.4671620708491734
+        },
+        "candidate": {
+          "n": 66,
+          "nll": 2.9737214142514286,
+          "brier": 0.5888320378014273,
+          "top1": 0.12121212121212122,
+          "top5": 0.4393939393939394,
+          "estimated_top1": 0.10189134926537063,
+          "estimated_top5": 0.423321234136597
+        },
+        "selected": {
+          "n": 66,
+          "nll": 2.9587682799495685,
+          "brier": 0.5896496478538346,
+          "top1": 0.12121212121212122,
+          "top5": 0.4393939393939394,
+          "estimated_top1": 0.11574431670102375,
+          "estimated_top5": 0.4671620708491734
+        }
+      }
+    }
+  ],
+  "pooled_original_test_blocks": {
+    "baseline": {
+      "n": 368,
+      "nll": 3.057679435263515,
+      "brier": 0.5524013336208544,
+      "top1": 0.10597826086956522,
+      "top5": 0.453804347826087,
+      "estimated_top1": 0.11818503051862454,
+      "estimated_top5": 0.4781332411667145
+    },
+    "candidate": {
+      "n": 368,
+      "nll": 3.0578765067830718,
+      "brier": 0.5526617584492963,
+      "top1": 0.10597826086956522,
+      "top5": 0.453804347826087,
+      "estimated_top1": 0.10828820498577786,
+      "estimated_top5": 0.4466498766431492
+    },
+    "selected": {
+      "n": 368,
+      "nll": 3.055882129042664,
+      "brier": 0.5524202526554487,
+      "top1": 0.10597826086956522,
+      "top5": 0.453804347826087,
+      "estimated_top1": 0.11371896974513464,
+      "estimated_top5": 0.46427387770655
+    }
+  },
+  "selected_minus_baseline_nll95": [
+    -0.00818844427572453,
+    0.004402097624103385
+  ],
+  "candidate_minus_baseline_nll95": [
+    -0.010042632296547225,
+    0.01023409462171864
+  ],
+  "default_model": "baseline",
+  "activation_recommended": false
+}
