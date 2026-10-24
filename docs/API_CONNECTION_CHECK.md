@@ -52,3 +52,8 @@ Referenciák:
 
 - https://docs.streamlit.io/develop/api-reference/connections/st.secrets
 - https://www.api-football.com/news/post/how-to-get-started-with-api-football-the-complete-beginners-guide
+
+# Secrets beolvasási diagnosztika (2. verzió)
+
+A korábbi általános „nem érhető el” üzenet helyett fix, titokérték nélküli állapot jelenik meg: olvashatatlan Secrets (hiányzó fájl vagy TOML-hiba), üres beállítás, hiányzó legfelső szintű bejegyzés, szakasz alá került bejegyzés, illetve üres/nem szöveges érték. A beágyazott kulcs keresése legfeljebb nyolc szintű; ilyen kulcsot a program nem használ automatikusan. Az elsőbbség továbbra is legfelső szintű Secrets, majd környezeti változó. Más kulcsnevek, szakasznevek, értékek és kivételszövegek nem jelennek meg. Ez nem API-hitelesítés és nem fogyaszt szolgáltatói kvótát.
+
