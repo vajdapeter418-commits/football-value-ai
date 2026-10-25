@@ -1,5 +1,6 @@
 """Opt-in ephemeral local PostgreSQL with TLS; never uses external Secrets or data."""
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 import importlib.util
 import os
@@ -86,14 +87,37 @@ class LocalPostgresIntegration(unittest.TestCase):
             with self.assertRaises(StorageUnavailable):
                 with self.store()._connection() as cur:
                     cur.execute(sql)
-        # A transaction interrupted after INSERT must leave neither event nor retry key.
-        import psycopg
-        with psycopg.connect(**self.admin) as db:
-            with self.assertRaises(RuntimeError):
-                with db.transaction():
-                    db.execute("DELETE FROM fva_technical_test.events")
-                    raise RuntimeError('synthetic rollback')
+        # Fail after the adapter's real INSERT, before commit: event, clock
+        # reservation and idempotency key must all roll back together.
+        store = self.store(); original = store._connection
+        @contextmanager
+        def interrupted():
+            with original() as cur:
+                class CursorProxy:
+                    def __getattr__(inner, name):
+                        return getattr(cur, name)
+                    def execute(inner, sql, args=None):
+                        cur.execute(sql, args)
+                        if sql.startswith('INSERT'):
+                            raise RuntimeError('synthetic interruption before commit')
+                yield CursorProxy()
+        store._connection = interrupted
+        key, fields = uuid.uuid4(), self.fields()
+        with self.assertRaises(StorageUnavailable):
+            store.save_match(request_id=key, **fields)
         self.assertEqual(len(self.store().load()['observations']), before+9)
+        self.store().save_match(request_id=key, **fields)
+        self.assertEqual(len(self.store().load()['observations']), before+10)
+        # Direct app-role SQL cannot reuse a past transaction's timestamp.
+        with self.assertRaises(StorageUnavailable):
+            with self.store()._connection() as cur:
+                cur.execute("INSERT INTO fva_technical_test.events "
+                            "(request_id,request_hash,kind,fixture_id,observed_at,recorded_at,entry) "
+                            "SELECT %s,request_hash,kind,fixture_id,observed_at,recorded_at,entry "
+                            "FROM fva_technical_test.events LIMIT 1", (uuid.uuid4(),))
+        with self.assertRaises(StorageUnavailable):
+            with self.store()._connection() as cur:
+                cur.execute("UPDATE fva_technical_test.identity SET recorded_at=clock_timestamp()")
 
     def test_new_instance_and_database_restart_preserve_exact_history(self):
         self.store().save_match(request_id=uuid.uuid4(), **self.fields())
