@@ -322,4 +322,3 @@ def source_status(p, at=None, max_age_hours=24):
     at = utc(at or now())
     age = (at - utc(p['source']['published_at'])).total_seconds() / 3600
     return 'friss' if 0 <= age <= max_age_hours else 'elavult'
-

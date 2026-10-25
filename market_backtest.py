@@ -203,4 +203,3 @@ def backtest(state, *, test_start, test_end, gap_threshold=10, movement_threshol
                           'summary': {rule: _summary(rows, rule) for rule in RULES}}
                          for k, rows in sorted(strata.items())],
             'rows': test, 'exclusions': dict(exclusions), 'warnings': warnings}
-
