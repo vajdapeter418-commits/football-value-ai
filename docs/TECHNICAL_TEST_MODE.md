@@ -137,21 +137,29 @@ A fordíthatósági és whitespace-ellenőrzés sikeres.
 | Eredmény hiányában nincs kiértékelt mérkőzés; címke nem módosítja a megfigyelést | Sikeres |
 | Meglévő regresszió: későbbi odds/hír, módosult kezdés, fejl./teszt címkehatár | Sikeres |
 | Meglévő Poisson regresszió: aznapi/későbbi eredmény nem jut a tanulómintába | Sikeres |
-| Valódi Streamlit űrlapmentés, új UI-session, tiltási utak, hibakitakarás, visszateszt | Helyben kihagyva, CI-ben futtatandó |
+| Valódi Streamlit űrlapmentés, új UI-session, tiltási utak, hibakitakarás, visszateszt | Helyben kihagyva; GitHub CI-ben mind a 6 sikeres |
 | Futó URL tényleges deployment-hozzárendelése | Nem igazolt |
 | Tényleges felhős reboot utáni tartósság | Nem igazolt |
 
-A kezdeti teljes helyi regresszió 111 tesztet jelzett, 26 hibával és 3 kihagyással;
-a hibákat a hiányzó `streamlit` import okozta. Ez **nem sikeres teljes helyi
-regresszió**, és nem tekintendő alkalmazáshibák nélküli teljes runtime-igazolásnak.
-A későbbi bővített futás és a PR CI eredménye az átadáskor külön rögzítendő.
+A teljes helyi regresszió a hiányzó `streamlit` import miatt nem igazolható ebben
+a környezetben; a fókuszált helyi csomag ezt nem helyettesíti.
+
+**GitHub Actions: 134/134 teszt sikeres, kihagyás és hiba nélkül**, valódi
+Streamlit-függőséggel. Mind a 11 új tárolási/biztonsági és mind a 6 új runtime-
+ellenőrzés lefutott. A `compileall` és a `git diff --check HEAD^ HEAD` is sikeres.
+Ellenőrzött kódcommit: `28f113e3c9aa338de09bf50632fb3e8cb71abff9`.
+[Ellenőrzési futás és napló](https://github.com/vajdapeter418-commits/football-value-ai/actions/runs/40220821824).
+Az AppTest a böngésző URL-értékét helyettesíti: ez tényleges Streamlit runtime-
+ellenőrzés, de nem a publikus alkalmazás vagy a platform-hozzárendelés igazolása.
+A 13 meglévő felső szintű függvény AST összehasonlítással változatlan.
 
 ## Nyitott pontok és további teendők
 
 1. Az alkalmazás–tároló–ág összerendelés igazolása a Streamlit kezelőfelületén.
 2. Kizárólag tesztadatokhoz dedikált tartós kötet vagy külön külső tároló biztosítása.
    Enélkül a felhős tartósság követelménye nyitott marad; nincs éles tárolós helyettesítés.
-3. A PR GitHub Actions teljes regressziójának ellenőrzése; eltérés esetén javítás.
+3. A PR későbbi módosításai után az új fejcommit teljes GitHub Actions futásának
+   ellenőrzése. A fenti kódcommit teljes regressziója sikeres.
 4. Külön jóváhagyott teszttelepítés után kézi böngészős és reboot-ellenőrzés.
 5. Az egyetlen kézi odds-pillanatkép a baseline technikai értékelésére elegendő;
    mozgásszabályhoz ugyanahhoz a TESZT fixture-höz több, külön időpontú mentés kell.
