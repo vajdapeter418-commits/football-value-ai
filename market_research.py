@@ -57,7 +57,7 @@ def decimal_odds(value, convention='decimal'):
 def normalize_prices(prices):
     if not isinstance(prices, dict) or not 2 <= len(prices) <= 20:
         raise ValueError('A complete mutually exclusive market is required')
-    decimals = {text(k, 'outcome', 100): decimal_odds(v) for k, v in prices.items()}
+    decimals = {text(k, 'outcome', 100): decimal_odds(v) for k, v in sorted(prices.items())}
     if len(decimals) != len(prices):
         raise ValueError('Duplicate outcome')
     total = sum(1 / v for v in decimals.values())
@@ -111,7 +111,8 @@ def _observation(p):
     if len(set(outcomes)) != len(outcomes):
         raise ValueError('Duplicate outcome')
     for outcome in outcomes:
-        text(outcome, 'outcome', 100)
+        if text(outcome, 'outcome', 100) != outcome:
+            raise ValueError('Outcome names must be trimmed')
     if not isinstance(p['shares'], dict) or set(p['shares']) != set(outcomes):
         raise ValueError('Shares must identify every outcome; missing values are null')
     for metric in ('tickets', 'handle'):

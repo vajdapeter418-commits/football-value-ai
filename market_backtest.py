@@ -179,11 +179,14 @@ def backtest(state, *, test_start, test_end, gap_threshold=10, movement_threshol
     warnings = list(WARNINGS)
     if len({r['fixture'] for r in test}) < 100:
         warnings.append('Kis minta: 100-nál kevesebb független fixture; nincs igazolt előny.')
+    if clock < end:
+        warnings.append('A tesztidőszak még nem zárult le; az eredmény részleges.')
     if protocol is None:
         warnings.append('Feltáró történeti visszajátszás: nincs előre rögzített protokoll; nem igazolt érintetlen out-of-sample teszt.')
     else:
         warnings.append('Előre rögzített szabályok; az érintetlen adat és a teljes mintavételi manifest betartása emberi ellenőrzést igényel.')
     return {'mode': 'preregistered_chronological' if protocol else 'exploratory_chronological_replay',
+            'test_period_complete': clock >= end,
             'protocol_hash': protocol_hash, 'development_n': len(development), 'test_n': len(test),
             'test_start': start.isoformat(), 'test_end_exclusive': end.isoformat(),
             'thresholds': {'gap_pp': gap_threshold, 'movement_fair_pp': movement_threshold},

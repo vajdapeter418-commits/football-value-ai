@@ -2,6 +2,7 @@
 from copy import deepcopy
 from datetime import timedelta
 import os
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 
@@ -65,7 +66,8 @@ class MarketRuntimeTests(unittest.TestCase):
         self.assertEqual(self.cloud.writes, 0)
         self.unlock(app)
         self.assertEqual(self.cloud.loads, 1)
-        rendered = str(app)
+        rendered = ' '.join(str(x.value) for group in (app.caption, app.info, app.warning,
+                                                       app.error, app.success, app.markdown) for x in group)
         self.assertNotIn('fixture-secret-token', rendered)
 
     def test_verified_only_tables_and_tickets_only_warning(self):
@@ -119,8 +121,36 @@ class MarketRuntimeTests(unittest.TestCase):
         self.assertNotIn('fixture-secret-token', str(app.error))
         self.assertFalse(any('létrehozása' in b.label for b in app.button))
 
+    def test_result_form_appends_without_changing_observation(self):
+        original = deepcopy(self.cloud.state['observations'])
+        app = self.app(); self.unlock(app)
+        next(x for x in app.radio if x.label == 'Piaci nézet').set_value('Utólagos értékelés').run()
+        self.assertFalse(app.exception)
+        self.set_text(app, 'Igazolt befejezés UTC', (T + timedelta(days=1, hours=2)).isoformat())
+        self.set_text(app, 'Végeredmény (szöveges, a piac szabályai szerint)', '1–0')
+        self.set_text(app, 'Eredmény HTTPS forrása', 'https://example.com/result')
+        next(x for x in app.text_area if x.label.startswith('Elszámolás JSON')).set_value('{"home":"win","away":"loss"}')
+        next(x for x in app.text_area if x.label.startswith('Utólagos értékelés')).set_value('Completed and confirmed')
+        next(x for x in app.checkbox if x.label.startswith('Ellenőriztem a befejezést')).check()
+        with patch('market_research.now', return_value=T + timedelta(days=2)):
+            next(b for b in app.button if b.label == 'Utólagos értékelés hozzáfűzése').click().run()
+        self.assertFalse(app.exception)
+        self.assertTrue(app.success)
+        self.assertEqual(self.cloud.state['observations'], original)
+        self.assertEqual(len(self.cloud.state['results']), 1)
+
+    def test_backtest_page_handles_empty_evaluated_sample(self):
+        app = self.app(); self.unlock(app)
+        next(x for x in app.radio if x.label == 'Piaci nézet').set_value('Visszateszt').run()
+        self.set_text(app, 'Tesztidőszak kezdete UTC', '2026-01-01T00:00:00Z')
+        self.set_text(app, 'Tesztidőszak kizáró vége UTC', '2026-02-01T00:00:00Z')
+        next(b for b in app.button if b.label == 'Időrendi kutatási visszajátszás').click().run()
+        self.assertFalse(app.exception)
+        self.assertTrue(app.warning)
+        self.assertTrue(app.dataframe)
+
     def test_application_navigation_exposes_separate_market_page(self):
-        app = AppTest.from_file('streamlit_app.py', default_timeout=15)
+        app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / 'streamlit_app.py'), default_timeout=15)
         app.run()
         next(x for x in app.radio if x.label == 'Funkció').set_value('Piaci nyomozó').run()
         self.assertFalse(app.exception)

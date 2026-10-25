@@ -84,6 +84,19 @@ class MarketEvidenceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             normalize_prices({'one_side_only': 2})
 
+    def test_three_way_serialization_is_stable_and_no_complements_are_guessed(self):
+        record = observation()
+        record['outcomes'] = ['home', 'draw', 'away']
+        record['shares'] = {o: {'tickets': None, 'tickets_origin': 'unavailable',
+                                'handle': None, 'handle_origin': 'unavailable'} for o in record['outcomes']}
+        for point in record['odds']:
+            point['prices'] = {'home': 2.17, 'draw': 3.43, 'away': 4.19}
+        state = capture(empty_state(), [record])
+        restored = validate_state(json.loads(canonical(state)))
+        self.assertEqual(restored, state)
+        record['shares']['home'].update(handle=70., handle_origin='calculated_complement')
+        with self.assertRaises(ValueError): capture(empty_state(), [record])
+
     def test_exact_percentages_and_complement_provenance(self):
         record = observation()
         record['shares']['home']['handle'] = 70.25
@@ -232,6 +245,21 @@ class MarketBacktestTests(unittest.TestCase):
         report = replay(state)
         self.assertEqual(report['test_n'], 1)
         self.assertEqual(report['test']['high_handle']['bets'], 1)
+
+    def test_casing_of_same_original_book_does_not_create_independent_sample(self):
+        record = observation(); other = deepcopy(record)
+        other['bookmaker'] = 'draftkings'
+        other['source']['publisher'] = 'Another publisher'
+        state = settle(capture(empty_state(), [record, other]), record)
+        self.assertEqual(replay(state)['test_n'], 1)
+
+    def test_conflicting_republications_are_excluded_without_guessing(self):
+        record = observation(); other = deepcopy(record)
+        other['shares']['home']['handle'] = 80.; other['shares']['away']['handle'] = 20.
+        state = settle(capture(empty_state(), [record, other]), record)
+        report = replay(state)
+        self.assertEqual(report['test_n'], 0)
+        self.assertEqual(report['exclusions']['conflicting_splits_at_same_time'], 1)
 
     def test_future_changes_cannot_change_frozen_signal(self):
         record = observation(); state = capture(empty_state(), [record]); state = settle(state, record)
