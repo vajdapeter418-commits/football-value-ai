@@ -90,3 +90,13 @@ A JSON/CSV-bevitel strukturált, nagy idősorhoz tudatosan fejlettebb importútv
 - Valódi privát tárolóba írás, éles Streamlit-deploy és élő tickets/handle szolgáltató nem volt a teszt része. A működő napló adataihoz nem nyúltunk.
 
 CI és végleges commit: a PR #13 Checks lapján. Az első CI-futás két tesztharness-hibáját (relatív AppTest-útvonal, belső tesztkonfigurációt is tartalmazó repr ellenőrzése) javítottuk. A következő futás minden tesztet teljesített; az importált navigációs fájl plusz EOF-üres sorát a végső formázási ellenőrzéshez eltávolítottuk.
+
+## Végső ellenőrzés (PR #13)
+
+Az azonos iroda/piac/időpont eltérő oddsait most konzervatívan kizárjuk (`conflicting_odds_at_same_time`); a közlők sorrendje nem választhat önkényes árat. Azonos piaci identitás mellett a kimenetelek halmaza nem változhat. A két regressziós teszt a javítás előtt hibázott.
+
+Nyolc további teszt fedi az első archívumlétrehozást hiányzó/meglévő ágon, a visszaolvasást, sérült vagy elérhetetlen archívum nullázásának tiltását, hiányzó commit-visszaigazolást, timeout/URLError és HTTP 403/404/409/422/500 kezelését, bizonytalan írás utáni visszaolvasást automatikus ismétlés nélkül, cutoff-határt és késői információ változatlan jelét, valamint külön irodák külön árait és pénzarányait.
+
+Helyben 33/33 kutatási teszt és compileall sikeres; a teljes regressziós és Streamlit runtime csomag eredményét az aktuális PR-fej Actions-futása igazolja. A helyi környezetben Streamlit nincs telepítve, a shell GitHub-elérését proxykapcsolati hiba akadályozta; a forrásokat és a PR-t a GitHub-kapcsolaton keresztül kezeljük.
+
+Valódi privát archívumtároló és hozzá tartozó token nélkül nem ellenőrizhető az éles jogosultság és ág-/fájl-létrehozás, a tényleges GitHub PUT/GET roundtrip, konkurens írás ütközése vagy a szerveren már végrehajtott írás közben megszakadó hálózat. Ezeket helyettesített szolgáltatóval ellenőriztük. Az eredeti közlők valódi eredetazonossága, az éles Streamlit konfiguráció és az élő szolgáltatói adatfolyam sem igazolt ezzel. Nincs merge vagy deploy.

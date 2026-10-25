@@ -237,6 +237,9 @@ def validate_state(state):
                     if fixture_key(old) == fixture_key(p) and any(
                             old[k] != p[k] for k in ('home', 'away', 'kickoff')):
                         raise ValueError('Conflicting fixture identity')
+                    if (market_key(old) == market_key(p)
+                            and set(old['outcomes']) != set(p['outcomes'])):
+                        raise ValueError('Conflicting market outcomes')
                 observations.append(p)
             elif key == 'results':
                 _result(p, observations)
@@ -319,3 +322,4 @@ def source_status(p, at=None, max_age_hours=24):
     at = utc(at or now())
     age = (at - utc(p['source']['published_at'])).total_seconds() / 3600
     return 'friss' if 0 <= age <= max_age_hours else 'elavult'
+

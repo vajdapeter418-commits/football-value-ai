@@ -126,11 +126,18 @@ def backtest(state, *, test_start, test_end, gap_threshold=10, movement_threshol
             continue
         # One point per timestamp: choose latest recorded evidence, deduplicate redistributors.
         snapshots = {}
+        conflicting_odds = False
         for observation in sorted(observations, key=lambda p: utc(p['recorded_at'])):
             for s in observation['odds']:
                 if (utc(s['at']) <= cutoff and utc(s['at']) < utc(result['actual_kickoff'])
                         and _eligible_source(s['source'], cutoff, max_age_hours)):
-                    snapshots[utc(s['at'])] = s
+                    at = utc(s['at'])
+                    if at in snapshots and snapshots[at]['prices'] != s['prices']:
+                        conflicting_odds = True
+                    snapshots[at] = s
+        if conflicting_odds:
+            exclusions['conflicting_odds_at_same_time'] += 1
+            continue
         if not snapshots:
             exclusions['no_complete_odds_at_cutoff'] += 1
             continue
@@ -196,3 +203,4 @@ def backtest(state, *, test_start, test_end, gap_threshold=10, movement_threshol
                           'summary': {rule: _summary(rows, rule) for rule in RULES}}
                          for k, rows in sorted(strata.items())],
             'rows': test, 'exclusions': dict(exclusions), 'warnings': warnings}
+
