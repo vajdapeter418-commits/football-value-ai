@@ -17,6 +17,13 @@ jobs:
           python-version: '3.12'
           cache: pip
       - run: python -m pip install -r requirements.txt
-      - run: python -m unittest discover -s tests -v
+      - name: Install ephemeral PostgreSQL test prerequisites
+        run: sudo apt-get update && sudo apt-get install -y postgresql openssl
+      - name: Run full suite including isolated TLS PostgreSQL
+        run: |
+          export FVA_RUN_LOCAL_POSTGRES_TESTS=1
+          export FVA_TEST_POSTGRES_BIN="$(pg_config --bindir)"
+          python -m unittest discover -s tests -v
       - run: python -m compileall -q .
       - run: git diff --check HEAD^ HEAD
+

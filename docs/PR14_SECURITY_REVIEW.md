@@ -132,3 +132,27 @@ A compileall és diff whitespace ellenőrzés külön fut.
 A vizsgálat nem módosít main ágat, telepített alkalmazást, meglévő naplókat,
 éles adatokat vagy hitelesítő adatokat. Nincs merge, telepítési parancs vagy
 alkalmazás-újraindítás. A meglévő workflow csak tesztel, deploy lépést nem tartalmaz.
+
+
+## PostgreSQL megvalósítás – jelen fejlesztési kör
+
+A külön adapter a `technical_test_postgres.py`, az egyszeri adminisztrátori
+sémalétrehozás a `sql/technical_test_postgres.sql`. A technikai UI most kizárólag
+PostgreSQL-t nyit, OIDC/engedélylista és tényleges belépési pont ellenőrzése után.
+A korábbi helyi TestStore kizárólag offline regressziós segédként marad a kódban;
+a felületnek nincs hozzá visszaváltási útja és helyi adatot nem migrál automatikusan.
+A korábbi helyi tárolóra vonatkozó megállapítások történeti bizonyítékok.
+
+A DB saját SECURITY DEFINER függvénye foglal monoton UTC rögzítési időt; az
+alkalmazásszerepkör ezt nem állíthatja. Az INSERT trigger a tranzakcióhoz kötött
+lefoglalt időt ellenőrzi. Sorzár rendezi az appendeket, egyedi UUID és kérés-hash
+védi az idempotenciát; a teljes hash-lánc minden olvasás/írás előtt validált.
+TLS verify-full és külön szerveroldali Secrets kötelező. A tranzakciós hiba
+visszagördül; legfeljebb három próbálkozás történik átmeneti hibára azonos UUID-val.
+Hiányos kapcsolat/azonosság vagy hibás adat nem okoz más tárolóra váltást.
+
+Részletes integrációs és aktiválási feltételek:
+[PR14_POSTGRES_INTEGRATION_PLAN.md](PR14_POSTGRES_INTEGRATION_PLAN.md).
+A teljes archívum ellenőrzése továbbra is kis TESZT állományra készült;
+nincs nagy adatmennyiségre vonatkozó skálázási ígéret. A DB tulajdonosa módosíthatja
+a történetet, ezért külön adminisztrációs és backup-határ szükséges.

@@ -21,7 +21,14 @@ class TechnicalRuntimeTests(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name) / APP
-        for mock in (patch.dict(os.environ, {'FVA_TECH_TEST_ENABLED': '1',
+        self.store = TestStore(self.root, url='https://' + HOST, enabled='1')
+        class UIStore:
+            load = self.store.load
+            def save_match(inner, *, request_id, **fields):
+                return self.store.save_match(**fields)
+            def save_result(inner, fixture_id, *, request_id, **fields):
+                return self.store.save_result(fixture_id, **fields)
+        for mock in (patch.object(ui, 'PostgresTestStore', return_value=UIStore()), patch.dict(os.environ, {'FVA_TECH_TEST_ENABLED': '1',
                                             'FVA_TECH_TEST_ROOT': str(self.root)}),
                      patch.object(ui, '_url', return_value='https://' + HOST),
                      patch.object(ui, '_authorized', return_value=True),
@@ -30,19 +37,28 @@ class TechnicalRuntimeTests(unittest.TestCase):
             self.addCleanup(mock.stop)
 
     def app(self):
-        app = AppTest.from_string('from technical_test_ui import run\nrun()', default_timeout=15)
+        app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / 'technical_test_app.py'), default_timeout=15)
         app.run()
         self.assertFalse(app.exception)
         return app
 
+    def test_alternative_entrypoint_cannot_open_store(self):
+        with patch.object(ui, 'PostgresTestStore') as store:
+            app = AppTest.from_string('from technical_test_ui import run\nrun()')
+            app.run()
+            store.assert_not_called()
+        self.assertFalse(app.exception)
+        self.assertTrue(app.error)
+        self.assertFalse(app.button)
+
     def test_unauthorized_visitors_cannot_read_or_write(self):
-        with patch.object(ui, '_authorized', return_value=False), patch.object(ui, 'TestStore') as store:
+        with patch.object(ui, '_authorized', return_value=False), patch.object(ui, 'PostgresTestStore') as store:
             app = self.app()
             store.assert_not_called()
         self.assertTrue(app.error)
         self.assertEqual([b.label for b in app.button], ['TESZT bejelentkezés'])
         self.assertFalse(app.dataframe)
-        self.assertFalse(self.root.exists())
+        self.assertFalse(self.store.load()['observations'])
 
     def test_manual_save_and_new_ui_session_readback(self):
         app = self.app()
@@ -63,14 +79,14 @@ class TechnicalRuntimeTests(unittest.TestCase):
         self.assertTrue(app.error)
         self.assertFalse(app.radio)
         self.assertFalse(app.button)
-        self.assertFalse(self.root.exists())
+        self.assertFalse(self.store.load()['observations'])
 
     def test_missing_storage_has_no_fallback(self):
-        with patch.dict(os.environ, {'FVA_TECH_TEST_ROOT': ''}):
+        with patch.object(ui, 'PostgresTestStore', side_effect=ValueError('Missing Secrets')):
             app = self.app()
         self.assertTrue(app.error)
         self.assertFalse(app.button)
-        self.assertFalse(self.root.exists())
+        self.assertFalse(self.store.load()['observations'])
 
     def test_disabled_or_missing_url_blocks_all_forms(self):
         with patch.dict(os.environ, {'FVA_TECH_TEST_ENABLED': ''}):
@@ -80,10 +96,10 @@ class TechnicalRuntimeTests(unittest.TestCase):
         with patch.object(ui, '_url', return_value=''):
             app = self.app()
         self.assertTrue(app.error)
-        self.assertFalse(self.root.exists())
+        self.assertFalse(self.store.load()['observations'])
 
     def test_storage_error_never_renders_exception_or_configuration(self):
-        with patch.object(ui, 'TestStore', side_effect=RuntimeError('DO_NOT_DISCLOSE_SENTINEL')):
+        with patch.object(ui, 'PostgresTestStore', side_effect=RuntimeError('DO_NOT_DISCLOSE_SENTINEL')):
             app = self.app()
         self.assertTrue(app.error)
         rendered = ' '.join(str(x.value) for group in (app.error, app.caption, app.markdown) for x in group)
@@ -111,3 +127,4 @@ class TechnicalRuntimeTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

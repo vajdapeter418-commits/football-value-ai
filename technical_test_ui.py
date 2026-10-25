@@ -1,9 +1,13 @@
-"""Opt-in test-host UI; never reads secrets or production archives."""
+"""Opt-in test-host UI; reads only dedicated server-side PostgreSQL Secrets."""
 from datetime import datetime, timedelta, timezone
 import os
+import uuid
+from pathlib import Path
+from streamlit.runtime.scriptrunner import get_script_run_ctx
 import streamlit as st
 from market_backtest import backtest
-from technical_test import TestStore, permitted, authorized
+from technical_test import permitted, authorized
+from technical_test_postgres import PostgresTestStore
 
 
 def _url():
@@ -17,6 +21,10 @@ def _authorized():
 def run():
     st.title('TESZT – biztonságos technikai tesztmód')
     st.warning('Kizárólag mesterséges TESZT adatok; nem valódi mérkőzés vagy fogadási ajánlat.')
+    context = get_script_run_ctx()
+    if context is None or Path(context.main_script_path).resolve() != Path(__file__).with_name('technical_test_app.py').resolve():
+        st.error('A TESZT felület kizárólag a technical_test_app.py belépési pontból érhető el.')
+        return
     url = _url()
     if not permitted(url, os.environ.get('FVA_TECH_TEST_ENABLED')):
         st.error('A technikai tesztmód csak a kijelölt HTTPS tesztalkalmazásban engedélyezett.')
@@ -29,18 +37,15 @@ def run():
             except Exception:
                 st.error('A TESZT bejelentkezés nincs megfelelően beállítva.')
         return
-    root = os.environ.get('FVA_TECH_TEST_ROOT')
-    if not root:
-        st.error('Nincs külön TESZT tároló. Mentés letiltva; nincs másik adatbázisra váltás.')
-        return
     try:
-        store = TestStore(root, url=url, enabled='1')
+        store = PostgresTestStore(st.secrets, url=url, enabled='1')
         state = store.load()
     except Exception:
-        st.error('A külön TESZT tároló nem használható. Nincs átváltás másik tárolóra.')
+        st.error('A külön TESZT PostgreSQL tároló nem használható. Olvasás és mentés letiltva; nincs másik tárolóra váltás.')
         return
-    st.caption('A folyamat újraindítása után a mentés visszaolvasható, ha a kötet megmarad. '
-               'A felhős kötet tartóssága nincs igazolva; helyi fájl nem jelent felhős garanciát.')
+    st.caption('Külön PostgreSQL TESZT tároló. A felhős tartósság külön integrációs ellenőrzést igényel.')
+    for operation in ('match', 'result'):
+        st.session_state.setdefault('technical_request_' + operation, str(uuid.uuid4()))
     now = datetime.now(timezone.utc)
     with st.form('technical_test_match'):
         fixture = st.text_input('TESZT azonosító', value='proba-1')
@@ -52,12 +57,14 @@ def run():
                   for o, v in [('home', 2.3), ('draw', 3.2), ('away', 3.0)]}
         if st.form_submit_button('TESZT mérkőzés és odds mentése'):
             try:
-                store.save_match(fixture=fixture, home=home, away=away, kickoff=kickoff,
+                store.save_match(request_id=st.session_state.technical_request_match, fixture=fixture, home=home, away=away, kickoff=kickoff,
                                  observed_at=observed, prices=prices)
                 state = store.load()
+                st.session_state.technical_request_match = str(uuid.uuid4())
                 st.success('TESZT adatok mentve és visszaolvasva.')
             except Exception:
-                st.error('A TESZT mentés sikertelen. Ellenőrizd az adatokat és az időrendet.')
+                st.error('A TESZT mentés sikertelen. Olvasás és mentés leállítva ezen a futáson.')
+                return
     st.subheader('Visszaolvasott TESZT adatok')
     st.write({'TESZT megfigyelések': len(state['observations']), 'TESZT eredmények': len(state['results'])})
     st.dataframe([dict(TESZT_meccs=e['payload']['fixture_id'], hazai=e['payload']['home'],
@@ -73,10 +80,12 @@ def run():
             ended = st.text_input('TESZT befejezés UTC', value=now.isoformat())
             if st.form_submit_button('TESZT eredmény mentése'):
                 try:
-                    state = store.save_result(selected, home_goals=hg, away_goals=ag, ended_at=ended)
+                    state = store.save_result(selected, request_id=st.session_state.technical_request_result, home_goals=hg, away_goals=ag, ended_at=ended)
+                    st.session_state.technical_request_result = str(uuid.uuid4())
                     st.success('TESZT eredmény mentve.')
                 except Exception:
-                    st.error('Érvénytelen vagy még nem befejezett TESZT mérkőzés.')
+                    st.error('A TESZT eredménymentés sikertelen. Olvasás és mentés leállítva ezen a futáson.')
+                    return
     with st.form('technical_test_replay'):
         start = st.text_input('TESZT időszak kezdete UTC', value=(now - timedelta(days=30)).isoformat())
         end = st.text_input('TESZT időszak vége UTC (kizáró)', value=(now + timedelta(days=30)).isoformat())
@@ -88,3 +97,4 @@ def run():
                 st.caption('Mesterséges technikai visszajátszás; nem teljesítményigazolás.')
             except Exception:
                 st.error('A TESZT visszateszt nem futtatható ezekkel az adatokkal.')
+
