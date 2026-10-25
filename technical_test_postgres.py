@@ -2,6 +2,7 @@
 from copy import deepcopy
 from contextlib import contextmanager
 import json
+import os
 import re
 import time
 import uuid
@@ -39,7 +40,7 @@ class PostgresTestStore:
             if type(self._params['port']) not in (str, int) or not 1 <= int(self._params['port']) <= 65535:
                 raise ValueError()
             self._params.update(sslmode='verify-full', connect_timeout=5,
-                                service='', passfile='/dev/null', hostaddr='',
+                                passfile='/dev/null',
                                 application_name=APP, options='-c timezone=UTC -c statement_timeout=10000 -c lock_timeout=5000')
         except Exception:
             raise StorageUnavailable('Missing or invalid TESZT PostgreSQL Secrets') from None
@@ -47,6 +48,10 @@ class PostgresTestStore:
     @contextmanager
     def _connection(self):
         try:
+            # Reject inherited libpq selectors rather than reading credentials or
+            # allowing a service/hostaddr setting to redirect the dedicated DB.
+            if any(name.startswith('PG') for name in os.environ):
+                raise StorageUnavailable('Inherited libpq configuration forbidden')
             import psycopg
             with psycopg.connect(**self._params) as db:
                 if not db.pgconn.ssl_in_use:

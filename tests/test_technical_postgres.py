@@ -24,6 +24,7 @@ class Cursor:
     def __init__(self):
         self.events = []
         self.key = None
+        self.clock = T
     def execute(self, sql, args=None):
         self.sql = sql
         if 'WHERE request_id=' in sql:
@@ -36,7 +37,7 @@ class Cursor:
         return [(e[2], e[-1]) for e in self.events]
     def fetchone(self):
         if 'reserve_recording_time()' in self.sql:
-            return (T,)
+            return (self.clock,)
         return next(((e[1],) for e in self.events if e[0] == self.key), None)
 
 
@@ -63,7 +64,7 @@ class PostgresTests(unittest.TestCase):
         self.assertEqual(params['sslmode'], 'verify-full')
         self.assertEqual(params['connect_timeout'], 5)
         self.assertNotIn('dsn', params)
-        self.assertEqual(params['service'], '')
+        self.assertNotIn('service', params)
         self.assertEqual(params['passfile'], '/dev/null')
 
     def test_save_retry_and_db_clock(self):
@@ -106,6 +107,29 @@ class PostgresTests(unittest.TestCase):
                 store.save_match(request_id=uuid.uuid4(), **FIELDS)
             self.assertEqual(call.call_count, 1)
 
+    def test_db_recorded_cutoff_excludes_backdated_late_input(self):
+        from market_backtest import backtest
+        store, cursor = self.harness()
+        store.save_match(request_id=uuid.uuid4(), **FIELDS)
+        cursor.clock = T + timedelta(hours=6)
+        store.save_match(request_id=uuid.uuid4(), **{**FIELDS,
+            'observed_at': (T+timedelta(hours=6)).isoformat(),
+            'prices': dict(home=1.9, draw=3.8, away=4.0)})
+        cursor.clock = T + timedelta(days=2)
+        store.save_result('TESZT-one', request_id=uuid.uuid4(), home_goals=1, away_goals=0,
+                          ended_at=(T+timedelta(days=1, hours=2)).isoformat())
+        def replay():
+            with patch('market_backtest.now', return_value=T+timedelta(days=40)):
+                return backtest(store.load(), test_start=T, test_end=T+timedelta(days=30))
+        before = replay()
+        self.assertEqual(before['test_n'], 1)
+        store.save_match(request_id=uuid.uuid4(), **{**FIELDS,
+            'observed_at': (T+timedelta(hours=10)).isoformat(),
+            'prices': dict(home=1.01, draw=50.0, away=100.0)})
+        after = replay()
+        self.assertEqual(before['rows'], after['rows'])
+        self.assertEqual(before['test_n'], after['test_n'])
+
     def test_lost_commit_response_reuses_durable_request_key(self):
         store, cursor = self.harness()
         attempts = []
@@ -134,6 +158,13 @@ class PostgresTests(unittest.TestCase):
         with patch.dict(sys.modules, psycopg=driver):
             with self.assertRaises(StorageUnavailable):
                 self.store().load()
+
+    def test_inherited_libpq_service_is_rejected_without_connecting(self):
+        driver = types.SimpleNamespace(connect=unittest.mock.Mock(), OperationalError=ConnectionError)
+        with patch.dict(sys.modules, psycopg=driver), patch.dict('os.environ', {'PGSERVICE': 'synthetic'}):
+            with self.assertRaises(StorageUnavailable):
+                self.store().load()
+            driver.connect.assert_not_called()
 
     def test_driver_error_redacted(self):
         driver = types.SimpleNamespace(connect=lambda **kw: (_ for _ in ()).throw(RuntimeError('SECRET_SENTINEL')),
