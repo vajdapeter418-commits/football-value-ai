@@ -79,3 +79,14 @@ Mindig látható selection bias, több piac/szabály, 100 fixture alatti kis min
 Nincs élő tickets/handle API bekötve: bizonyítható jogosultságú szolgáltató nem áll rendelkezésre. A dokumentált API-eredetű export rögzíthető, de az alkalmazás nem hív tetszőleges URL-t és nem kezel kliensoldali szolgáltatói kulcsot. Nincs scraping vagy élőnek feltüntetett demo. Denver–OKC, Stanford–NC State és Iberia–Mjällby adatait nem vettük át; csak ellenőrzött eredeti forrás alapján vihetők fel. A tesztadatok kizárólag szintetikus fixture-ök a tesztkönyvtárban, a felhasználói nézet üres adatokból indul.
 
 A JSON/CSV-bevitel strukturált, nagy idősorhoz tudatosan fejlettebb importútvonal. Nincs többfelhasználós ACL, automatikus eredményhitelesítés, pénzösszegbecslés, forrásoldali aláírás-hitelesítés vagy automatikus archívumrotáció. Nincs változás a Poisson/Exact Score képletekben, a meglévő adatokban vagy a privát napló szabályaiban.
+
+## Automatizált validáció
+
+- GitHub Actions, Ubuntu, CPython 3.12.15, Streamlit 1.66.1: **109/109 teszt sikeres**, nincs skip. Ebből 77 meglévő regressziós teszt, 25 új adat-/integritás-/forrás-/visszateszt-teszt és 7 valódi Streamlit AppTest.
+- A runtime tesztek helyettesített privát GitHub-archívummal ellenőrzik a belépés előtti nulla hozzáférést, a hibás jelszót, a közölt tartalom titokmentességét, a tickets-only jelzést, a kézi mentést és új sessionből visszaolvasást, az eredmény külön hozzáfűzését, a felhőhiba hamis siker nélküli jelzését, az üres visszatesztet és a teljes alkalmazás navigációját.
+- A numerikus/integritási tesztek lefedik a teljes 1X2-piac JSON roundtripjét, eredeti/normalizált oddsot és margint, pontos százalékokat, komplementer-jelölést, import rollbacket, szerveridő importtilalmát, időhatárokat, későbbi adatoktól változatlan jelet, forráseredetet és irodánkénti deduplikálást, azonos időre ellentmondó közlések kizárását, ismert ROI-t, push/void/félkimeneteleket, címke-cutoffot és a jövőbeli protokoll befagyasztását.
+- A helyi offline ellenőrzés 25/25 új teszttel sikeres; korábbi kibővített lokális futás 74/74 tesztet teljesített a meglévő baseline-tesztek UI-helyettesítésével. Ez nem helyi Streamlit runtime-igazolás: a helyi függőségtelepítést hálózati korlát akadályozta. A teljes, valódi Streamlit-futás a PR GitHub Actions ellenőrzése.
+- `python -m compileall -q .` sikeres. A CI `git diff --check HEAD^ HEAD` a PR mainhez viszonyított integrációs diffjét is ellenőrzi.
+- Valódi privát tárolóba írás, éles Streamlit-deploy és élő tickets/handle szolgáltató nem volt a teszt része. A működő napló adataihoz nem nyúltunk.
+
+CI és végleges commit: a PR #13 Checks lapján. Az első CI-futás két tesztharness-hibáját (relatív AppTest-útvonal, belső tesztkonfigurációt is tartalmazó repr ellenőrzése) javítottuk. A következő futás minden tesztet teljesített; az importált navigációs fájl plusz EOF-üres sorát a végső formázási ellenőrzéshez eltávolítottuk.
