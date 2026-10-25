@@ -121,7 +121,12 @@ Helyben 56 fókuszált tárolási/biztonsági/piaci regressziós teszt sikeres.
 A teljes `python -m unittest discover -s tests -v` újrafuttatása helyben megtörtént,
 de a Streamlit hiánya miatt nem sikeres (128 teszt, 26 importhiba, 10 skip).
 Ez nem teljes sikeres regresszió; a PR GitHub Actions környezetében a valódi
-függőségekkel a teljes csomagnak is le kell futnia. A CI eredménye külön rögzítendő.
+függőségekkel a teljes csomagnak is le kell futnia. A javítás kódcommitján (`e3d835bf5c0fafdaea8562dbfc8a17815e9c6fc2`) a GitHub
+Actions valódi Streamlittel **142/142 tesztet sikeresen, kihagyás nélkül** futtatott
+(11,805 s). A compileall is sikeres. A whitespace ellenőrzés három fájlvégi
+üres sort jelzett; ezeket a következő commit eltávolítja. Az ellenőrzött futás:
+https://github.com/vajdapeter418-commits/football-value-ai/actions/runs/40223558434 .
+A végleges fejcommit teljes CI-eredményét az átadási jelentés rögzíti.
 A compileall és diff whitespace ellenőrzés külön fut.
 
 A vizsgálat nem módosít main ágat, telepített alkalmazást, meglévő naplókat,

@@ -260,4 +260,3 @@ class TestStore:
                 explanation='TESZT synthetic settlement',
                 settlement={o: 'win' if o == winner else 'loss' for o in p['outcomes']}))
         return self._change(change)
-

@@ -88,4 +88,3 @@ def run():
                 st.caption('Mesterséges technikai visszajátszás; nem teljesítményigazolás.')
             except Exception:
                 st.error('A TESZT visszateszt nem futtatható ezekkel az adatokkal.')
-
