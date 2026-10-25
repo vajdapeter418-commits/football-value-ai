@@ -3,11 +3,15 @@ from datetime import datetime, timedelta, timezone
 import os
 import streamlit as st
 from market_backtest import backtest
-from technical_test import TestStore, permitted
+from technical_test import TestStore, permitted, authorized
 
 
 def _url():
     return getattr(getattr(st, 'context', None), 'url', '')
+
+
+def _authorized():
+    return authorized(getattr(st, 'user', None), os.environ.get('FVA_TECH_TEST_ALLOWED_EMAILS'))
 
 
 def run():
@@ -16,6 +20,14 @@ def run():
     url = _url()
     if not permitted(url, os.environ.get('FVA_TECH_TEST_ENABLED')):
         st.error('A technikai tesztmód csak a kijelölt HTTPS tesztalkalmazásban engedélyezett.')
+        return
+    if not _authorized():
+        st.error('A TESZT adatokhoz ellenőrzött bejelentkezés és külön hozzáférési engedély szükséges.')
+        if st.button('TESZT bejelentkezés'):
+            try:
+                st.login()
+            except Exception:
+                st.error('A TESZT bejelentkezés nincs megfelelően beállítva.')
         return
     root = os.environ.get('FVA_TECH_TEST_ROOT')
     if not root:
@@ -76,3 +88,4 @@ def run():
                 st.caption('Mesterséges technikai visszajátszás; nem teljesítményigazolás.')
             except Exception:
                 st.error('A TESZT visszateszt nem futtatható ezekkel az adatokkal.')
+

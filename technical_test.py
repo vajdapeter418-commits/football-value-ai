@@ -2,6 +2,9 @@
 from copy import deepcopy
 from contextlib import closing, contextmanager
 import json
+import fcntl
+import stat
+import uuid
 import os
 from pathlib import Path
 import re
@@ -20,6 +23,17 @@ def permitted(url, enabled):
         p = urlsplit(url)
         return enabled == '1' and p.scheme == 'https' and p.netloc == HOST
     except (TypeError, ValueError):
+        return False
+
+
+def authorized(user, allowlist):
+    """Only verified platform OIDC claims; no request/header/session-state identity."""
+    allowed = {email.strip().casefold() for email in (allowlist or '').split(',') if email.strip()}
+    try:
+        return (user.is_logged_in is True and user.get('email_verified') is True
+                and isinstance(user.get('email'), str)
+                and user.get('email').casefold() in allowed)
+    except (AttributeError, TypeError):
         return False
 
 
@@ -62,6 +76,14 @@ def _validate(state):
     return state
 
 
+@contextmanager
+def closing_fd(fd):
+    try:
+        yield fd
+    finally:
+        os.close(fd)
+
+
 class TestStore:
     __test__ = False
 
@@ -69,53 +91,139 @@ class TestStore:
         if not permitted(url, enabled):
             raise ValueError('TESZT application identity required')
         self.root = Path(root)
-        # A new dedicated directory is mandatory. No fallback and no DB path override.
         if (not self.root.is_absolute() or self.root.name != APP or
                 self.root != self.root.resolve() or
-                Path(__file__).resolve().parent in self.root.parents or
-                any(p.is_symlink() for p in (self.root, *self.root.parents))):
+                Path(__file__).resolve().parent in self.root.parents):
             raise ValueError('Dedicated absolute TESZT directory required')
-        marker = self.root / 'TESZT-ONLY'
-        if not self.root.exists():
-            self.root.mkdir(mode=0o700, parents=False)
-            with marker.open('x', encoding='utf-8') as handle:
-                handle.write(FORMAT)
-        if (marker.is_symlink() or not marker.is_file() or
-                marker.stat().st_nlink != 1 or marker.read_text(encoding='utf-8') != FORMAT):
-            raise ValueError('Unrecognized TESZT directory; no files changed')
         self.path = self.root / 'TESZT.sqlite3'
-        self._check_paths()
-        if self.path.exists():
-            # Inspect in read-only mode before any DDL/write.
-            self.load()
-        else:
-            fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-            os.close(fd)
-            with self._connect() as db:
-                db.execute('CREATE TABLE technical_test(id INTEGER PRIMARY KEY CHECK(id=1), '
-                           'format TEXT NOT NULL, app TEXT NOT NULL, state TEXT NOT NULL)')
-                db.execute('INSERT INTO technical_test VALUES(1,?,?,?)',
-                           (FORMAT, APP, json.dumps(empty_state())))
+        # Pin every directory component without following links. The parent lock
+        # serializes first creation; the root lock is shared by all processes.
+        with closing_fd(self._directory(self.root.parent)) as parent:
+            fcntl.flock(parent, fcntl.LOCK_EX)
+            created = False
+            try:
+                os.mkdir(APP, mode=0o700, dir_fd=parent)
+                created = True
+            except FileExistsError:
+                pass
+            with closing_fd(os.open(APP, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                                    dir_fd=parent)) as rootfd:
+                self.identity = self._identity(os.fstat(rootfd))
+                fcntl.flock(rootfd, fcntl.LOCK_EX)
+                if created:
+                    fd = os.open('TESZT-ONLY', os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                                 os.O_NOFOLLOW, 0o600, dir_fd=rootfd)
+                    with os.fdopen(fd, 'wb') as handle:
+                        handle.write(FORMAT.encode())
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                self._check_paths(rootfd)
+                if 'TESZT.sqlite3' not in os.listdir(rootfd):
+                    if not created:
+                        raise ValueError('Missing TESZT database; automatic recovery forbidden')
+                    with closing(sqlite3.connect(':memory:')) as db:
+                        db.execute('CREATE TABLE technical_test(id INTEGER PRIMARY KEY CHECK(id=1), '
+                                   'format TEXT NOT NULL, app TEXT NOT NULL, state TEXT NOT NULL)')
+                        db.execute('INSERT INTO technical_test VALUES(1,?,?,?)',
+                                   (FORMAT, APP, json.dumps(empty_state())))
+                        db.commit()
+                        self._publish(rootfd, db.serialize())
+                else:
+                    with self._memory(rootfd) as (db, identity):
+                        self._read(db)
 
-    def _check_paths(self):
-        allowed = {'TESZT-ONLY', 'TESZT.sqlite3', 'TESZT.sqlite3-journal'}
-        if (self.root != self.root.resolve() or self.root.stat().st_mode & 0o022 or
-                any(p.name not in allowed or p.is_symlink() or not p.is_file() or
-                    p.stat().st_nlink != 1 for p in self.root.iterdir()) or
-                (self.root / 'TESZT-ONLY').read_text(encoding='utf-8') != FORMAT):
-            raise ValueError('Foreign, linked or unprotected TESZT directory')
+    @staticmethod
+    def _identity(info):
+        return info.st_dev, info.st_ino
+
+    @staticmethod
+    def _directory(path):
+        fd = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            for part in path.parts[1:]:
+                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+                os.close(fd)
+                fd = child
+            return fd
+        except BaseException:
+            os.close(fd)
+            raise
+
+    def _file(self, rootfd, name):
+        try:
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=rootfd)
+        except OSError as exc:
+            raise ValueError('Missing or linked TESZT file') from exc
+        try:
+            info = os.fstat(fd)
+            if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or
+                    info.st_uid != os.geteuid() or info.st_mode & 0o022):
+                raise ValueError('Linked, foreign or unprotected TESZT file')
+            return fd
+        except BaseException:
+            os.close(fd)
+            raise
+
+    def _check_paths(self, rootfd):
+        info = os.fstat(rootfd)
+        if (self._identity(info) != self.identity or info.st_uid != os.geteuid() or
+                info.st_mode & 0o022 or
+                any(name not in {'TESZT-ONLY', 'TESZT.sqlite3'} for name in os.listdir(rootfd))):
+            raise ValueError('Foreign or replaced TESZT directory')
+        with os.fdopen(self._file(rootfd, 'TESZT-ONLY'), 'rb') as handle:
+            if handle.read() != FORMAT.encode():
+                raise ValueError('Unrecognized TESZT directory')
+
+    @contextmanager
+    def _memory(self, rootfd):
+        # SQLite never opens a filesystem path, creates a journal, or runs DDL
+        # against an unchecked file. Replacement links cannot redirect writes.
+        with os.fdopen(self._file(rootfd, 'TESZT.sqlite3'), 'rb') as handle:
+            identity = self._identity(os.fstat(handle.fileno()))
+            data = handle.read()
+        with closing(sqlite3.connect(':memory:')) as db:
+            db.execute('PRAGMA trusted_schema=OFF')
+            db.deserialize(data)
+            yield db, identity
+
+    def _publish(self, rootfd, data):
+        name = '.TESZT-pending-' + uuid.uuid4().hex
+        fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                     0o600, dir_fd=rootfd)
+        try:
+            with os.fdopen(fd, 'wb') as handle:
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+            # The destination is replaced, never followed. Both paths are
+            # relative to the pinned directory, even if its parent is renamed.
+            os.replace(name, 'TESZT.sqlite3', src_dir_fd=rootfd, dst_dir_fd=rootfd)
+            os.fsync(rootfd)
+        finally:
+            try:
+                os.unlink(name, dir_fd=rootfd)
+            except FileNotFoundError:
+                pass
 
     @contextmanager
     def _connect(self, *, readonly=False):
-        self._check_paths()
-        mode = 'ro' if readonly else 'rw'
-        with closing(sqlite3.connect(self.path.as_uri() + '?mode=' + mode, uri=True, timeout=10)) as db:
-            with db:
-                yield db
+        with closing_fd(self._directory(self.root)) as rootfd:
+            fcntl.flock(rootfd, fcntl.LOCK_EX)
+            self._check_paths(rootfd)
+            with self._memory(rootfd) as (db, identity):
+                self._read(db)
+                with db:
+                    yield db
+                if not readonly:
+                    self._check_paths(rootfd)
+                    with closing_fd(self._file(rootfd, 'TESZT.sqlite3')) as current:
+                        if self._identity(os.fstat(current)) != identity:
+                            raise ValueError('TESZT database replaced during operation')
+                    self._publish(rootfd, db.serialize())
 
     @staticmethod
     def _read(db):
-        tables = db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        tables = db.execute("SELECT name FROM sqlite_master").fetchall()
         if tables != [('technical_test',)]:
             raise ValueError('Foreign database forbidden')
         rows = db.execute('SELECT format, app, state FROM technical_test').fetchall()
@@ -152,3 +260,4 @@ class TestStore:
                 explanation='TESZT synthetic settlement',
                 settlement={o: 'win' if o == winner else 'loss' for o in p['outcomes']}))
         return self._change(change)
+

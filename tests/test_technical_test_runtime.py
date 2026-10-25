@@ -24,6 +24,7 @@ class TechnicalRuntimeTests(unittest.TestCase):
         for mock in (patch.dict(os.environ, {'FVA_TECH_TEST_ENABLED': '1',
                                             'FVA_TECH_TEST_ROOT': str(self.root)}),
                      patch.object(ui, '_url', return_value='https://' + HOST),
+                     patch.object(ui, '_authorized', return_value=True),
                      patch('forecast_cloud.GitHubArchive._request', side_effect=AssertionError('No cloud access'))):
             mock.start()
             self.addCleanup(mock.stop)
@@ -33,6 +34,15 @@ class TechnicalRuntimeTests(unittest.TestCase):
         app.run()
         self.assertFalse(app.exception)
         return app
+
+    def test_unauthorized_visitors_cannot_read_or_write(self):
+        with patch.object(ui, '_authorized', return_value=False), patch.object(ui, 'TestStore') as store:
+            app = self.app()
+            store.assert_not_called()
+        self.assertTrue(app.error)
+        self.assertEqual([b.label for b in app.button], ['TESZT bejelentkezés'])
+        self.assertFalse(app.dataframe)
+        self.assertFalse(self.root.exists())
 
     def test_manual_save_and_new_ui_session_readback(self):
         app = self.app()
@@ -47,7 +57,7 @@ class TechnicalRuntimeTests(unittest.TestCase):
 
     def test_wrong_host_blocks_store_and_original_navigation(self):
         with patch.object(ui, '_url', return_value='https://production.streamlit.app'):
-            app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / 'streamlit_app.py'))
+            app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / 'technical_test_app.py'))
             app.run()
         self.assertFalse(app.exception)
         self.assertTrue(app.error)
@@ -101,3 +111,4 @@ class TechnicalRuntimeTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

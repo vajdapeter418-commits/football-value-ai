@@ -885,11 +885,6 @@ def fpl_panel():
 
 if __name__ == "__main__":
     st.set_page_config(page_title="Football Value AI", page_icon="⚽", layout="centered")
-    import os
-    if os.environ.get('FVA_TECH_TEST_ENABLED') == '1':
-        from technical_test_ui import run as technical_test_run
-        technical_test_run()
-        st.stop()
     oldal = st.sidebar.radio("Funkció", ["Mérkőzéselemzés és FPL", "Oddsmozgás-nyomozó", "API-kapcsolat ellenőrzése", "Tippek naplója", "Piaci nyomozó"])
     if oldal == "Oddsmozgás-nyomozó":
         from detective_ui import run
