@@ -138,4 +138,3 @@ GRANT UPDATE(id) ON fva_technical_test.identity TO fva_test_app;
 GRANT SELECT, INSERT ON fva_technical_test.events TO fva_test_app;
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA fva_technical_test TO fva_test_app;
 COMMIT;
-

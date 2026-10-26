@@ -46,6 +46,7 @@ class LocalPostgresIntegration(unittest.TestCase):
                          sslmode='verify-full', sslrootcert=str(cls.root/'server.crt'))
         with psycopg.connect(**cls.admin, autocommit=True) as db:
             db.execute('CREATE ROLE fva_test_app LOGIN NOINHERIT')
+            db.execute('CREATE ROLE migration_schema_owner NOLOGIN')
             db.execute('REVOKE CREATE ON SCHEMA public FROM PUBLIC')
             db.execute('REVOKE TEMP ON DATABASE postgres FROM PUBLIC')
             db.execute((Path(__file__).resolve().parents[1]/'sql/technical_test_postgres.sql').read_text())
@@ -80,7 +81,7 @@ class LocalPostgresIntegration(unittest.TestCase):
             ('table', 'CREATE SCHEMA fva_technical_test; CREATE TABLE fva_technical_test.keep(x int); INSERT INTO fva_technical_test.keep VALUES(42)', False),
             ('function', 'CREATE SCHEMA fva_technical_test; CREATE FUNCTION fva_technical_test.keep() RETURNS int LANGUAGE sql AS $$SELECT 42$$', False),
             ('type', "CREATE SCHEMA fva_technical_test; CREATE TYPE fva_technical_test.keep AS ENUM ('keep')", False),
-            ('owner', 'CREATE SCHEMA fva_technical_test AUTHORIZATION fva_test_app', False),
+            ('owner', 'CREATE SCHEMA fva_technical_test AUTHORIZATION migration_schema_owner', False),
             ('schema_acl', 'CREATE SCHEMA fva_technical_test; GRANT USAGE ON SCHEMA fva_technical_test TO PUBLIC', False),
             ('db_create', 'GRANT CREATE ON DATABASE {db} TO fva_test_app', False),
             ('db_temp', 'GRANT TEMP ON DATABASE {db} TO PUBLIC', False),
@@ -139,7 +140,8 @@ class LocalPostgresIntegration(unittest.TestCase):
             with self.subTest(change=change), psycopg.connect(**self.admin, autocommit=True) as db:
                 db.execute(change)
                 try:
-                    with self.assertRaises(psycopg.Error):
+                    expected = 'role memberships' if change.startswith('GRANT') else 'role attributes'
+                    with self.assertRaisesRegex(psycopg.Error, expected):
                         db.execute(migration)
                     db.execute('ROLLBACK')
                 finally:
@@ -148,6 +150,39 @@ class LocalPostgresIntegration(unittest.TestCase):
             with self.assertRaises(psycopg.Error):
                 db.execute(migration)
             db.execute('ROLLBACK')
+
+    def test_migration_with_non_superuser_owner(self):
+        import psycopg
+        from psycopg import sql
+        migration = (Path(__file__).resolve().parents[1]/'sql/technical_test_postgres.sql').read_text()
+        for label in ('valid', 'no_database_create', 'no_schema_create', 'no_schema_usage'):
+            with self.subTest(label=label):
+                name = 'migration_' + uuid.uuid4().hex
+                with psycopg.connect(**self.admin, autocommit=True) as admin:
+                    admin.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(name)))
+                try:
+                    with psycopg.connect(**{**self.admin, 'dbname': name}, autocommit=True) as db:
+                        db.execute(sql.SQL('REVOKE TEMP ON DATABASE {} FROM PUBLIC').format(sql.Identifier(name)))
+                        db.execute('REVOKE CREATE ON SCHEMA public FROM PUBLIC')
+                        db.execute('CREATE SCHEMA fva_technical_test AUTHORIZATION migration_schema_owner')
+                        if label != 'no_database_create':
+                            db.execute(sql.SQL('GRANT CREATE ON DATABASE {} TO migration_schema_owner').format(sql.Identifier(name)))
+                        db.execute('SET ROLE migration_schema_owner')
+                        if label in ('no_schema_create', 'no_schema_usage'):
+                            privilege = 'CREATE' if label == 'no_schema_create' else 'USAGE'
+                            db.execute(f'REVOKE {privilege} ON SCHEMA fva_technical_test FROM migration_schema_owner')
+                        if label == 'valid':
+                            db.execute(migration)
+                            self.assertEqual(db.execute("SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid='fva_technical_test.events'::regclass").fetchone()[0], 'migration_schema_owner')
+                        else:
+                            expected = 'database CREATE' if label == 'no_database_create' else 'schema USAGE and CREATE'
+                            with self.assertRaisesRegex(psycopg.Error, expected):
+                                db.execute(migration)
+                            db.execute('ROLLBACK')
+                            self.assertIsNone(db.execute("SELECT to_regclass('fva_technical_test.events')").fetchone()[0])
+                finally:
+                    with psycopg.connect(**self.admin, autocommit=True) as admin:
+                        admin.execute(sql.SQL('DROP DATABASE {}').format(sql.Identifier(name)))
 
     def test_parallel_append_retry_rollback_and_privileges(self):
         fields = self.fields(); key = uuid.uuid4()
@@ -221,4 +256,3 @@ class LocalPostgresIntegration(unittest.TestCase):
         finally:
             with psycopg.connect(**self.admin) as db:
                 db.execute("UPDATE fva_technical_test.identity SET format='TESZT-postgres-v1'")
-

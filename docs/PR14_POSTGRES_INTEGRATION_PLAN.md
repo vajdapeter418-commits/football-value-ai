@@ -45,4 +45,3 @@ Vizsgálatok: nyolc párhuzamos azonos kulcsú append csak egy sort készít; ny
 | Backup/PITR visszaállítás második TESZT DB-be | Dokumentált helyreállítási időpont, láncellenőrzés, elvárt sorösszeg és hozzáférés-elkülönítés. |
 
 A próbák naplójában commit SHA, időpont, tesztprojekt nem titkos azonosítója, sorösszeg és hash szerepelhet; DSN, jelszó, API-kulcs, OIDC token és éles adat nem. A redeploy utáni tartósság csak a tényleges felhős elfogadás után állítható. Jelen munka ezt nem hajtja végre.
-
