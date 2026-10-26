@@ -179,7 +179,7 @@ class LocalPostgresIntegration(unittest.TestCase):
                             with self.assertRaisesRegex(psycopg.Error, expected):
                                 db.execute(migration)
                             db.execute('ROLLBACK')
-                            self.assertIsNone(db.execute("SELECT to_regclass('fva_technical_test.events')").fetchone()[0])
+                            self.assertEqual(db.execute("SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='fva_technical_test' AND c.relname='events'").fetchone()[0], 0)
                 finally:
                     with psycopg.connect(**self.admin, autocommit=True) as admin:
                         admin.execute(sql.SQL('DROP DATABASE {}').format(sql.Identifier(name)))
