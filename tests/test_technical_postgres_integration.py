@@ -47,6 +47,7 @@ class LocalPostgresIntegration(unittest.TestCase):
         with psycopg.connect(**cls.admin, autocommit=True) as db:
             db.execute('CREATE ROLE fva_test_app LOGIN NOINHERIT')
             db.execute('REVOKE CREATE ON SCHEMA public FROM PUBLIC')
+            db.execute('REVOKE TEMP ON DATABASE postgres FROM PUBLIC')
             db.execute((Path(__file__).resolve().parents[1]/'sql/technical_test_postgres.sql').read_text())
         cls.config = dict(host='localhost', port=cls.port, dbname='postgres', user='fva_test_app',
                           password='synthetic-unused-trust-auth', sslrootcert=str(cls.root/'server.crt'))
@@ -68,6 +69,85 @@ class LocalPostgresIntegration(unittest.TestCase):
         clock = datetime.now(timezone.utc)
         return dict(fixture=uuid.uuid4().hex, home='A', away='B', kickoff=(clock+timedelta(days=1)).isoformat(),
                     observed_at=(clock-timedelta(hours=1)).isoformat(), prices=dict(home=2.3, draw=3.2, away=3.0))
+
+    def test_migration_preflight_and_atomic_preservation(self):
+        import psycopg
+        from psycopg import sql
+        migration = (Path(__file__).resolve().parents[1]/'sql/technical_test_postgres.sql').read_text()
+        cases = [
+            ('missing', '', True),
+            ('empty', 'CREATE SCHEMA fva_technical_test', True),
+            ('table', 'CREATE SCHEMA fva_technical_test; CREATE TABLE fva_technical_test.keep(x int); INSERT INTO fva_technical_test.keep VALUES(42)', False),
+            ('function', 'CREATE SCHEMA fva_technical_test; CREATE FUNCTION fva_technical_test.keep() RETURNS int LANGUAGE sql AS $$SELECT 42$$', False),
+            ('type', "CREATE SCHEMA fva_technical_test; CREATE TYPE fva_technical_test.keep AS ENUM ('keep')", False),
+            ('owner', 'CREATE SCHEMA fva_technical_test AUTHORIZATION fva_test_app', False),
+            ('schema_acl', 'CREATE SCHEMA fva_technical_test; GRANT USAGE ON SCHEMA fva_technical_test TO PUBLIC', False),
+            ('db_create', 'GRANT CREATE ON DATABASE {db} TO fva_test_app', False),
+            ('db_temp', 'GRANT TEMP ON DATABASE {db} TO PUBLIC', False),
+            ('public_create', 'GRANT CREATE ON SCHEMA public TO PUBLIC', False),
+            ('foreign_schema', 'CREATE SCHEMA other; GRANT USAGE ON SCHEMA other TO fva_test_app', False),
+            ('column_acl', 'CREATE TABLE public.keep(x int); GRANT SELECT(x) ON public.keep TO fva_test_app', False),
+            ('function_acl', 'CREATE FUNCTION public.keep() RETURNS int LANGUAGE sql AS $$SELECT 42$$', False),
+            ('default_acl', 'ALTER DEFAULT PRIVILEGES GRANT SELECT ON TABLES TO fva_test_app', False),
+        ]
+        for label, setup, success in cases:
+            with self.subTest(label=label):
+                name = 'migration_' + uuid.uuid4().hex
+                with psycopg.connect(**self.admin, autocommit=True) as admin:
+                    admin.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(name)))
+                try:
+                    with psycopg.connect(**{**self.admin, 'dbname': name}, autocommit=True) as db:
+                        db.execute(sql.SQL('REVOKE TEMP ON DATABASE {} FROM PUBLIC').format(sql.Identifier(name)))
+                        db.execute('REVOKE CREATE ON SCHEMA public FROM PUBLIC')
+                        if setup:
+                            db.execute(setup.format(db=name))
+                        snapshot = "SELECT classid::text,objid::text,objsubid,deptype FROM pg_depend WHERE refclassid='pg_namespace'::regclass AND refobjid=to_regnamespace('fva_technical_test') ORDER BY 1,2,3,4"
+                        before = db.execute(snapshot).fetchall()
+                        if success:
+                            db.execute(migration)
+                            self.assertEqual(db.execute('SELECT count(*) FROM fva_technical_test.identity').fetchone()[0], 1)
+                            # Re-running must fail without changing initialized data.
+                            with self.assertRaises(psycopg.Error):
+                                db.execute(migration)
+                            db.execute('ROLLBACK')
+                            self.assertEqual(db.execute('SELECT count(*) FROM fva_technical_test.identity').fetchone()[0], 1)
+                        else:
+                            with self.assertRaises(psycopg.Error):
+                                db.execute(migration)
+                            db.execute('ROLLBACK')
+                            self.assertEqual(db.execute(snapshot).fetchall(), before)
+                            if label == 'table':
+                                self.assertEqual(db.execute('SELECT x FROM fva_technical_test.keep').fetchall(), [(42,)])
+                finally:
+                    with psycopg.connect(**self.admin, autocommit=True) as admin:
+                        admin.execute(sql.SQL('DROP DATABASE {}').format(sql.Identifier(name)))
+
+    def test_migration_rejects_role_escalation_and_app_executor(self):
+        import psycopg
+        migration = (Path(__file__).resolve().parents[1]/'sql/technical_test_postgres.sql').read_text()
+        for change, restore in [
+            ('ALTER ROLE fva_test_app INHERIT', 'ALTER ROLE fva_test_app NOINHERIT'),
+            ('ALTER ROLE fva_test_app CREATEDB', 'ALTER ROLE fva_test_app NOCREATEDB'),
+            ('ALTER ROLE fva_test_app CREATEROLE', 'ALTER ROLE fva_test_app NOCREATEROLE'),
+            ('ALTER ROLE fva_test_app BYPASSRLS', 'ALTER ROLE fva_test_app NOBYPASSRLS'),
+            ('ALTER ROLE fva_test_app REPLICATION', 'ALTER ROLE fva_test_app NOREPLICATION'),
+            ('ALTER ROLE fva_test_app SUPERUSER', 'ALTER ROLE fva_test_app NOSUPERUSER'),
+            ('ALTER ROLE fva_test_app NOLOGIN', 'ALTER ROLE fva_test_app LOGIN'),
+            ('GRANT pg_read_all_data TO fva_test_app', 'REVOKE pg_read_all_data FROM fva_test_app'),
+            ('GRANT fva_test_app TO postgres', 'REVOKE fva_test_app FROM postgres'),
+        ]:
+            with self.subTest(change=change), psycopg.connect(**self.admin, autocommit=True) as db:
+                db.execute(change)
+                try:
+                    with self.assertRaises(psycopg.Error):
+                        db.execute(migration)
+                    db.execute('ROLLBACK')
+                finally:
+                    db.execute(restore)
+        with psycopg.connect(**{**self.admin, 'user': 'fva_test_app'}, autocommit=True) as db:
+            with self.assertRaises(psycopg.Error):
+                db.execute(migration)
+            db.execute('ROLLBACK')
 
     def test_parallel_append_retry_rollback_and_privileges(self):
         fields = self.fields(); key = uuid.uuid4()
@@ -141,3 +221,4 @@ class LocalPostgresIntegration(unittest.TestCase):
         finally:
             with psycopg.connect(**self.admin) as db:
                 db.execute("UPDATE fva_technical_test.identity SET format='TESZT-postgres-v1'")
+
