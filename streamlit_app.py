@@ -7,7 +7,23 @@ from urllib.request import Request, urlopen
 import streamlit as st
 
 
-def feldolgozas(raw):
+def piaci_eselyek(oddsok):
+    try:
+        oddsok = tuple(float(odds) for odds in oddsok)
+    except (TypeError, ValueError):
+        return None
+
+    if len(oddsok) != 3 or any(
+        not math.isfinite(odds) or odds <= 1 for odds in oddsok
+    ):
+        return None
+
+    nyers = [1 / odds for odds in oddsok]
+    osszeg = sum(nyers)
+    return tuple(esely / osszeg for esely in nyers)
+
+
+def feldolgozas(raw, *, zarassal=False):
     olvaso = csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))
     mezok = {"Div", "Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG"}
 
@@ -15,6 +31,7 @@ def feldolgozas(raw):
         raise ValueError("Hiányzó oszlopok az adatfájlban.")
 
     meccsek = []
+    zarasi_eselyek = {}
 
     for s in olvaso:
         if s["Div"] != "E0" or not s["FTHG"] or not s["FTAG"]:
@@ -31,10 +48,15 @@ def feldolgozas(raw):
             (s["HomeTeam"], s["AwayTeam"], h, v, datum)
         )
 
+        if zarassal:
+            eselyek = piaci_eselyek(s.get(oszlop) for oszlop in ("AvgCH", "AvgCD", "AvgCA"))
+            if eselyek is not None:
+                zarasi_eselyek[(datum.isoformat(), s["HomeTeam"], s["AwayTeam"])] = eselyek
+
     if len(meccsek) < 20:
         raise ValueError("Legalább 20 befejezett mérkőzés szükséges.")
 
-    return meccsek
+    return (meccsek, zarasi_eselyek) if zarassal else meccsek
 
 
 def goltabla(gh, gv):
@@ -100,6 +122,13 @@ def pontos_eredmenyek(gh, gv):
     return tabla[:5]
 
 
+def brier_pont(eselyek, kimenetel):
+    return sum(
+        (esely - (i == kimenetel)) ** 2
+        for i, esely in enumerate(eselyek)
+    )
+
+
 def visszateszt(meccsek):
     sorok = []
     pontos_sorok = []
@@ -141,12 +170,7 @@ def visszateszt(meccsek):
                 else 2
             )
 
-            cel = [int(i == y) for i in range(3)]
-
-            sorok.append((
-                sum((a - b) ** 2 for a, b in zip(p, cel)),
-                sum((a - b) ** 2 for a, b in zip(alap, cel)),
-            ))
+            sorok.append((brier_pont(p, y), brier_pont(alap, y)))
 
             # A pontos eredményeket ugyanazzal a múltbeli mintával
             # becsüljük, mint az 1X2 kimeneteleket.
@@ -156,6 +180,8 @@ def visszateszt(meccsek):
                 "datum": nap.isoformat(),
                 "hazai": m[0],
                 "vendeg": m[1],
+                "modell_eselyek": tuple(p),
+                "kimenetel": y,
                 "top1": int(valos == top[0][:2]),
                 "top5": int(any(valos == (h, v) for h, v, _ in top)),
                 "top1_becsult": top[0][2],
@@ -166,6 +192,69 @@ def visszateszt(meccsek):
             })
 
     return sorok, kihagyott, pontos_sorok
+
+
+def piaci_visszateszt(modell_sorok, zarasi_eselyek, elteres_pp):
+    osszevetes = []
+    for sor in modell_sorok:
+        piac = zarasi_eselyek.get((sor["datum"], sor["hazai"], sor["vendeg"]))
+        if piac is None:
+            continue
+
+        modell = sor["modell_eselyek"]
+        kimenetel = sor["kimenetel"]
+        max_elteres = max(abs(a - b) for a, b in zip(modell, piac)) * 100
+        osszevetes.append((
+            brier_pont(modell, kimenetel),
+            brier_pont(piac, kimenetel),
+            max_elteres,
+        ))
+
+    nagy_elteres = [
+        eredmeny for eredmeny in osszevetes
+        if eredmeny[2] + 1e-9 >= elteres_pp
+    ]
+    return osszevetes, nagy_elteres
+
+
+def piaci_osszevetes_mutatasa(modell_sorok, zarasi_eselyek, elteres_pp):
+    st.subheader("Modell vs. piac · Premier League 1X2")
+    st.caption(
+        "A referencia a Football-Data.co.uk átlagos záró oddsainak "
+        "normalizált reciproka (AvgCH, AvgCD, AvgCA). A kisebb Brier-pontszám jobb."
+    )
+    parok, eltero_parok = piaci_visszateszt(modell_sorok, zarasi_eselyek, elteres_pp)
+    st.write(f"Közös minta: **{len(parok)}/{len(modell_sorok)}** tesztelt mérkőzés.")
+    if not parok:
+        st.info("A tesztelt meccsekhez nincs teljes, érvényes 1X2 záró oddssor.")
+        return
+
+    tabla = []
+    for cim, minta in (
+        ("Összes közös meccs", parok),
+        (f"Legalább {elteres_pp:g} százalékpont eltérés", eltero_parok),
+    ):
+        if not minta:
+            continue
+        modell = sum(modell_pont for modell_pont, _, _ in minta) / len(minta)
+        piac = sum(piac_pont for _, piac_pont, _ in minta) / len(minta)
+        tabla.append({
+            "Minta": cim,
+            "Meccs": len(minta),
+            "Poisson Brier": f"{modell:.4f}",
+            "Piaci Brier": f"{piac:.4f}",
+            "Modell − piac": f"{modell - piac:+.4f}",
+        })
+
+    st.dataframe(tabla, hide_index=True, use_container_width=True)
+    if not eltero_parok:
+        st.info("A megadott eltérési küszöböt egyik meccs sem érte el.")
+    st.caption(
+        "Az eltérés a három kimenetel közül a legnagyobb abszolút "
+        "esélykülönbség. A negatív Brier-különbség a modellnek kedvez. "
+        "A záró piaci ár a kezdéshez közeli referencia. "
+        "A visszateszt az előrejelzések pontosságát méri."
+    )
 
 
 def forma_mutatasa(meccsek, csapat):
@@ -232,7 +321,7 @@ def letoltes(kod):
     )
 
     with urlopen(keres, timeout=30) as valasz:
-        return feldolgozas(valasz.read())
+        return feldolgozas(valasz.read(), zarassal=True)
 
 
 def main():
@@ -243,7 +332,7 @@ def main():
 
     try:
         with st.spinner("Adatok betöltése…"):
-            meccsek = letoltes(kod)
+            meccsek, zarasi_eselyek = letoltes(kod)
 
     except Exception as hiba:
         st.error(
@@ -434,6 +523,15 @@ def main():
             "illetve idegenbeli csapatmeccs."
         )
 
+        elteres_pp = st.number_input(
+            "Jelentős 1X2 esélykülönbség (százalékpont)",
+            min_value=1.0,
+            max_value=100.0,
+            value=5.0,
+            step=1.0,
+            key="market_backtest_gap",
+        )
+
         if st.button(
             "Visszateszt indítása",
             use_container_width=True,
@@ -483,6 +581,8 @@ def main():
                     "Mindkét módszert ugyanazokon "
                     "a meccseken mérjük."
                 )
+
+                piaci_osszevetes_mutatasa(pontos_sorok, zarasi_eselyek, elteres_pp)
 
                 st.subheader("Pontos eredmények visszatesztje")
                 st.metric("Első tipp találati aránya", f"{100 * sum(r['top1'] for r in pontos_sorok) / len(pontos_sorok):.1f}%")
